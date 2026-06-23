@@ -90,8 +90,14 @@ export const runTest = createServerFn({ method: "POST" })
 export const getStatus = createServerFn({ method: "GET" })
   .inputValidator((d: { run_id: string }) => d)
   .handler(async ({ data }) => {
-    const { data: r } = await (await sb()).from("test_runs").select("*").eq("run_id", data.run_id).single();
-    if (!r) throw new Error("Run not found");
+    const { data: r } = await (await sb()).from("test_runs").select("*").eq("run_id", data.run_id).maybeSingle();
+    if (!r) {
+      return {
+        status: "queued", message: "Waiting for runner to pick up the job…",
+        session_id: null as string | null,
+        steps_done: 0, steps_total: 0, current_step_index: 0, current_step_name: "",
+      };
+    }
     return {
       status: r.status, message: r.message, session_id: r.session_id,
       steps_done: Array.isArray(r.steps) ? r.steps.length : 0,
@@ -104,8 +110,7 @@ export const getStatus = createServerFn({ method: "GET" })
 export const getResults = createServerFn({ method: "GET" })
   .inputValidator((d: { run_id: string }) => d)
   .handler(async ({ data }) => {
-    const { data: r } = await (await sb()).from("test_runs").select("*").eq("run_id", data.run_id).single();
-    if (!r) throw new Error("Run not found");
+    const { data: r } = await (await sb()).from("test_runs").select("*").eq("run_id", data.run_id).maybeSingle();
     return r;
   });
 
