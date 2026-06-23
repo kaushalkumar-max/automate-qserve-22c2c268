@@ -115,7 +115,7 @@ HEADERS = _headers  # backward-compat alias (callable)
 def db_select_queued() -> list[dict]:
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/test_runs",
-        headers=HEADERS,
+        headers=_headers(),
         params={"status": "eq.queued", "order": "created_at.asc", "limit": "1"},
         timeout=15,
     )
@@ -127,7 +127,7 @@ def db_update(run_id: str, patch: dict) -> None:
     patch = {**patch, "updated_at": datetime.now(timezone.utc).isoformat()}
     r = requests.patch(
         f"{SUPABASE_URL}/rest/v1/test_runs",
-        headers=HEADERS,
+        headers=_headers(),
         params={"run_id": f"eq.{run_id}"},
         json=patch,
         timeout=15,
