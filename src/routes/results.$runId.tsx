@@ -133,22 +133,21 @@ function Results() {
               Failure screenshots ({run.screenshots.length})
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {run.screenshots.map((s: string, i: number) => (
-                <a
-                  key={i}
-                  data-testid={`screenshot-${i}`}
-                  href={`data:image/png;base64,${s}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block border border-[#30363d] rounded-md overflow-hidden hover:border-[#2563eb] transition-colors bg-[#0d1117]"
-                >
-                  <img
-                    src={`data:image/png;base64,${s}`}
-                    alt={`screenshot-${i}`}
-                    className="w-full h-48 object-cover"
-                  />
-                </a>
-              ))}
+              {run.screenshots.map((s: string, i: number) => {
+                const src = s.startsWith("http") || s.startsWith("data:") ? s : `data:image/png;base64,${s}`;
+                return (
+                  <a
+                    key={i}
+                    data-testid={`screenshot-${i}`}
+                    href={src}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block border border-[#30363d] rounded-md overflow-hidden hover:border-[#2563eb] transition-colors bg-[#0d1117]"
+                  >
+                    <img src={src} alt={`screenshot-${i}`} className="w-full h-48 object-cover" />
+                  </a>
+                );
+              })}
             </div>
           </section>
         )}
