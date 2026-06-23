@@ -67,7 +67,7 @@ export const runTest = createServerFn({ method: "POST" })
     const tc = TEST_CASES[data.test_case];
     if (!tc) throw new Error(`Unknown test case: ${data.test_case}`);
     const dev = DEVICES.find((d) => d.id === data.device_id) || DEVICES[0];
-    const { data: row, error } = await sb()
+    const { data: row, error } = await (await sb())
       .from("test_runs")
       .insert({
         status: "queued",
