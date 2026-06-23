@@ -97,11 +97,14 @@ function Dashboard() {
     if (!file) return;
     setQrUploading(true);
     try {
-      const base64 = await fileToBase64(file);
-      const res = await uploadQr({ data: { filename: file.name, base64 } });
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const r = await fetch(`/api/public/bs-upload?kind=media&filename=${encodeURIComponent(file.name)}`, { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
       setQrUploaded(true);
-      setQrFilename(res.filename);
-      toast.success("QR image uploaded", { description: res.media_url });
+      setQrFilename(file.name);
+      toast.success("QR image uploaded", { description: j.media_url });
     } catch (e: any) {
       toast.error("QR upload failed", { description: e.message });
     } finally {
