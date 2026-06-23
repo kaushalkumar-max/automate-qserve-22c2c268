@@ -78,10 +78,13 @@ function Dashboard() {
     setApkUrl(null);
     setApkUploading(true);
     try {
-      const base64 = await fileToBase64(file);
-      const res = await uploadApk({ data: { filename: file.name, base64 } });
-      setApkUrl(res.app_url);
-      toast.success("APK uploaded to BrowserStack", { description: res.app_url });
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const r = await fetch("/api/public/bs-upload?kind=apk", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
+      setApkUrl(j.app_url);
+      toast.success("APK uploaded to BrowserStack", { description: j.app_url });
     } catch (e: any) {
       toast.error("APK upload failed", { description: e.message });
       setApkFile(null);
