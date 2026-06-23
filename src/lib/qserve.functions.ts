@@ -1,12 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { createClient } from "@supabase/supabase-js";
 import { TEST_CASES, DEVICES } from "@/lib/qserve-config";
 
-function sb() {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-  });
+async function sb() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
 
 function bsAuth() {
