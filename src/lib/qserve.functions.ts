@@ -1,12 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { createClient } from "@supabase/supabase-js";
 import { TEST_CASES, DEVICES } from "@/lib/qserve-config";
 
-function sb() {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-  });
+async function sb() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
 }
 
 function bsAuth() {
@@ -22,7 +20,7 @@ export const listTestCases = createServerFn({ method: "GET" }).handler(async () 
 export const listDevices = createServerFn({ method: "GET" }).handler(async () => DEVICES);
 
 export const getQrStatus = createServerFn({ method: "GET" }).handler(async () => {
-  const { data } = await sb().from("qserve_settings").select("*").eq("key", "qr_media").maybeSingle();
+  const { data } = await (await sb()).from("qserve_settings").select("*").eq("key", "qr_media").maybeSingle();
   return { uploaded: !!data?.media_url, filename: data?.filename ?? "", media_url: data?.media_url ?? "" };
 });
 
@@ -52,7 +50,7 @@ export const uploadQr = createServerFn({ method: "POST" })
     });
     if (!res.ok) throw new Error(`BrowserStack media upload failed: ${res.status} ${await res.text()}`);
     const j = (await res.json()) as { media_url: string };
-    await sb().from("qserve_settings").upsert({
+    await (await sb()).from("qserve_settings").upsert({
       key: "qr_media", media_url: j.media_url, filename: data.filename, uploaded_at: new Date().toISOString(),
     });
     return { media_url: j.media_url, filename: data.filename };
@@ -69,7 +67,7 @@ export const runTest = createServerFn({ method: "POST" })
     const tc = TEST_CASES[data.test_case];
     if (!tc) throw new Error(`Unknown test case: ${data.test_case}`);
     const dev = DEVICES.find((d) => d.id === data.device_id) || DEVICES[0];
-    const { data: row, error } = await sb()
+    const { data: row, error } = await (await sb())
       .from("test_runs")
       .insert({
         status: "queued",
@@ -92,7 +90,7 @@ export const runTest = createServerFn({ method: "POST" })
 export const getStatus = createServerFn({ method: "GET" })
   .inputValidator((d: { run_id: string }) => d)
   .handler(async ({ data }) => {
-    const { data: r } = await sb().from("test_runs").select("*").eq("run_id", data.run_id).single();
+    const { data: r } = await (await sb()).from("test_runs").select("*").eq("run_id", data.run_id).single();
     if (!r) throw new Error("Run not found");
     return {
       status: r.status, message: r.message, session_id: r.session_id,
@@ -106,13 +104,13 @@ export const getStatus = createServerFn({ method: "GET" })
 export const getResults = createServerFn({ method: "GET" })
   .inputValidator((d: { run_id: string }) => d)
   .handler(async ({ data }) => {
-    const { data: r } = await sb().from("test_runs").select("*").eq("run_id", data.run_id).single();
+    const { data: r } = await (await sb()).from("test_runs").select("*").eq("run_id", data.run_id).single();
     if (!r) throw new Error("Run not found");
     return r;
   });
 
 export const listRuns = createServerFn({ method: "GET" }).handler(async () => {
-  const { data } = await sb()
+  const { data } = await (await sb())
     .from("test_runs")
     .select("run_id,status,test_case_name,build_name,device,passed,created_at")
     .order("created_at", { ascending: false })
