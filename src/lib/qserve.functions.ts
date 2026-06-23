@@ -110,7 +110,7 @@ export const getResults = createServerFn({ method: "GET" })
   });
 
 export const listRuns = createServerFn({ method: "GET" }).handler(async () => {
-  const { data } = await sb()
+  const { data } = await (await sb())
     .from("test_runs")
     .select("run_id,status,test_case_name,build_name,device,passed,created_at")
     .order("created_at", { ascending: false })
