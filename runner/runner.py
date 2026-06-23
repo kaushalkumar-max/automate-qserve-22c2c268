@@ -6,7 +6,9 @@ via Appium, and writes step/screenshot progress back to the same row.
 
 Required environment variables:
   SUPABASE_URL                  https://<ref>.supabase.co
-  SUPABASE_SERVICE_ROLE_KEY     service-role key (server-side only)
+  SUPABASE_PUBLISHABLE_KEY      publishable (anon) key
+  RUNNER_EMAIL                  email of the dedicated runner user
+  RUNNER_PASSWORD               password of the dedicated runner user
   BROWSERSTACK_USERNAME
   BROWSERSTACK_ACCESS_KEY
 
@@ -32,7 +34,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from appium.webdriver.common.appiumby import AppiumBy
 
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+PUBLISHABLE_KEY = os.environ["SUPABASE_PUBLISHABLE_KEY"]
+RUNNER_EMAIL = os.environ["RUNNER_EMAIL"]
+RUNNER_PASSWORD = os.environ["RUNNER_PASSWORD"]
 BS_USER = os.environ["BROWSERSTACK_USERNAME"]
 BS_KEY = os.environ["BROWSERSTACK_ACCESS_KEY"]
 
@@ -40,12 +44,70 @@ APP_PACKAGE = "com.qart.qserve"
 POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
-HEADERS = {
-    "apikey": SERVICE_KEY,
-    "Authorization": f"Bearer {SERVICE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation",
-}
+
+# ---------- Auth: dedicated runner user ----------
+
+_auth_state: dict = {"access_token": None, "refresh_token": None, "expires_at": 0.0}
+
+
+def _login_runner() -> None:
+    """Sign in the dedicated runner user via GoTrue, cache tokens."""
+    r = requests.post(
+        f"{SUPABASE_URL}/auth/v1/token",
+        params={"grant_type": "password"},
+        headers={"apikey": PUBLISHABLE_KEY, "Content-Type": "application/json"},
+        json={"email": RUNNER_EMAIL, "password": RUNNER_PASSWORD},
+        timeout=15,
+    )
+    r.raise_for_status()
+    data = r.json()
+    _auth_state["access_token"] = data["access_token"]
+    _auth_state["refresh_token"] = data.get("refresh_token")
+    # expires_in is seconds; refresh a minute early
+    _auth_state["expires_at"] = time.time() + float(data.get("expires_in", 3600)) - 60
+    print(f"[auth] signed in as {RUNNER_EMAIL}", flush=True)
+
+
+def _refresh_runner() -> None:
+    rt = _auth_state.get("refresh_token")
+    if not rt:
+        _login_runner()
+        return
+    r = requests.post(
+        f"{SUPABASE_URL}/auth/v1/token",
+        params={"grant_type": "refresh_token"},
+        headers={"apikey": PUBLISHABLE_KEY, "Content-Type": "application/json"},
+        json={"refresh_token": rt},
+        timeout=15,
+    )
+    if not r.ok:
+        _login_runner()
+        return
+    data = r.json()
+    _auth_state["access_token"] = data["access_token"]
+    _auth_state["refresh_token"] = data.get("refresh_token", rt)
+    _auth_state["expires_at"] = time.time() + float(data.get("expires_in", 3600)) - 60
+
+
+def _ensure_token() -> str:
+    if not _auth_state["access_token"]:
+        _login_runner()
+    elif time.time() >= _auth_state["expires_at"]:
+        _refresh_runner()
+    return _auth_state["access_token"]
+
+
+def _headers() -> dict:
+    token = _ensure_token()
+    return {
+        "apikey": PUBLISHABLE_KEY,
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+
+HEADERS = _headers  # backward-compat alias (callable)
 
 
 # ---------- Supabase REST helpers ----------
@@ -53,7 +115,7 @@ HEADERS = {
 def db_select_queued() -> list[dict]:
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/test_runs",
-        headers=HEADERS,
+        headers=_headers(),
         params={"status": "eq.queued", "order": "created_at.asc", "limit": "1"},
         timeout=15,
     )
@@ -65,7 +127,7 @@ def db_update(run_id: str, patch: dict) -> None:
     patch = {**patch, "updated_at": datetime.now(timezone.utc).isoformat()}
     r = requests.patch(
         f"{SUPABASE_URL}/rest/v1/test_runs",
-        headers=HEADERS,
+        headers=_headers(),
         params={"run_id": f"eq.{run_id}"},
         json=patch,
         timeout=15,
