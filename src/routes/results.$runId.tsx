@@ -130,7 +130,7 @@ function Results() {
         {run.screenshots && run.screenshots.length > 0 && (
           <section data-testid="screenshots-section" className="space-y-3">
             <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#8b949e]">
-              Failure screenshots ({run.screenshots.length})
+              Step screenshots ({run.screenshots.length})
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {run.screenshots.map((s: string, i: number) => {
