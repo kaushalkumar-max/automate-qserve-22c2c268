@@ -2,10 +2,10 @@
 
 External worker that executes QServe test runs on BrowserStack.
 
-The Lovable dashboard inserts rows into `test_runs` with `status='queued'`.
-This script polls that table, runs the matching Appium flow on a real
-BrowserStack device, and writes step-by-step progress + screenshots back so
-the dashboard's live view updates in real time.
+The Lovable dashboard queues a test run. This script asks the published app
+for the next queued job, runs the matching Appium flow on a real BrowserStack
+device, and posts step-by-step progress + screenshots back so the dashboard's
+live view updates in real time.
 
 ## Setup
 
@@ -20,13 +20,15 @@ pip install -r requirements.txt
 Export these before running:
 
 ```bash
-export SUPABASE_URL="https://<your-project-ref>.supabase.co"
-export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"   # from Lovable Cloud backend
 export BROWSERSTACK_USERNAME="<bs-user>"
 export BROWSERSTACK_ACCESS_KEY="<bs-key>"
+# Optional. Defaults to the live QServe app:
+export QSERVE_APP_URL="https://automate-qserve.lovable.app"
 ```
 
-The service-role key bypasses RLS — keep it on your machine/CI only.
+You do not need a backend URL, backend access key, service user, or sign-in
+account for the runner. The app verifies the runner using the same
+BrowserStack credentials that Render already has.
 
 ## Run
 
@@ -54,4 +56,4 @@ To add a new test case:
 
 Anywhere with outbound HTTPS works: laptop, a small VPS, a GitHub Actions
 self-hosted runner, or a Docker container on Fly.io / Render. It only needs
-the four env vars above.
+the BrowserStack env vars above.

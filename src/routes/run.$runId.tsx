@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import AppHeader from "@/components/qserve/AppHeader";
-import { getStatus, getResults, tickRun } from "@/lib/qserve.functions";
+import { getStatus, getResults } from "@/lib/qserve.functions";
 
 export const Route = createFileRoute("/run/$runId")({
   component: TestRunning,
@@ -24,7 +24,6 @@ function TestRunning() {
 
     const tick = async () => {
       try {
-        await tickRun({ data: { run_id: runId } });
         const s = await getStatus({ data: { run_id: runId } });
         if (cancelled) return;
         setStatus(s);
