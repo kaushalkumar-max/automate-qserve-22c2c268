@@ -14,7 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      qserve_settings: {
+        Row: {
+          filename: string | null
+          key: string
+          media_url: string | null
+          uploaded_at: string
+        }
+        Insert: {
+          filename?: string | null
+          key: string
+          media_url?: string | null
+          uploaded_at?: string
+        }
+        Update: {
+          filename?: string | null
+          key?: string
+          media_url?: string | null
+          uploaded_at?: string
+        }
+        Relationships: []
+      }
+      test_runs: {
+        Row: {
+          app_url: string
+          build_name: string | null
+          created_at: string
+          current_step_index: number | null
+          current_step_name: string | null
+          device: string | null
+          device_id: string | null
+          duration_seconds: number | null
+          message: string | null
+          os_version: string | null
+          passed: boolean | null
+          public_url: string | null
+          run_id: string
+          screenshots: Json | null
+          session_id: string | null
+          status: string
+          step_names: Json | null
+          steps: Json | null
+          steps_total: number | null
+          test_case_key: string
+          test_case_name: string
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          app_url: string
+          build_name?: string | null
+          created_at?: string
+          current_step_index?: number | null
+          current_step_name?: string | null
+          device?: string | null
+          device_id?: string | null
+          duration_seconds?: number | null
+          message?: string | null
+          os_version?: string | null
+          passed?: boolean | null
+          public_url?: string | null
+          run_id?: string
+          screenshots?: Json | null
+          session_id?: string | null
+          status?: string
+          step_names?: Json | null
+          steps?: Json | null
+          steps_total?: number | null
+          test_case_key: string
+          test_case_name: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          app_url?: string
+          build_name?: string | null
+          created_at?: string
+          current_step_index?: number | null
+          current_step_name?: string | null
+          device?: string | null
+          device_id?: string | null
+          duration_seconds?: number | null
+          message?: string | null
+          os_version?: string | null
+          passed?: boolean | null
+          public_url?: string | null
+          run_id?: string
+          screenshots?: Json | null
+          session_id?: string | null
+          status?: string
+          step_names?: Json | null
+          steps?: Json | null
+          steps_total?: number | null
+          test_case_key?: string
+          test_case_name?: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
