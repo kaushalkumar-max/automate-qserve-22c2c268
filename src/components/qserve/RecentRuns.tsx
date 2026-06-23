@@ -45,11 +45,12 @@ export default function RecentRuns({ runs = [], loading }: { runs?: Run[]; loadi
   return (
     <div data-testid="recent-runs-list" className="space-y-2">
       {runs.map((r) => {
-        const target = r.status === "completed" ? `/results/${r.run_id}` : `/run/${r.run_id}`;
+        const isDone = r.status === "completed";
         return (
           <Link
             key={r.run_id}
-            to={target}
+            to={isDone ? "/results/$runId" : "/run/$runId"}
+            params={{ runId: r.run_id }}
             data-testid={`recent-run-${r.run_id}`}
             className="flex items-center justify-between gap-4 p-4 bg-[#161b22] border border-[#30363d] rounded-md hover:border-[#2563eb] hover:bg-[#1f242c] transition-colors"
           >
