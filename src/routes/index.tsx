@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  listTestCases, listDevices, getQrStatus, uploadQr, uploadApk, runTest, listRuns,
+  listTestCases, listDevices, getQrStatus, runTest, listRuns,
 } from "@/lib/qserve.functions";
 
 export const Route = createFileRoute("/")({
