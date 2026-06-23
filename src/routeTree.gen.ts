@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RunRunIdRouteImport } from './routes/run.$runId'
 import { Route as ResultsRunIdRouteImport } from './routes/results.$runId'
+import { Route as ApiPublicBsUploadRouteImport } from './routes/api/public/bs-upload'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,49 @@ const ResultsRunIdRoute = ResultsRunIdRouteImport.update({
   path: '/results/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicBsUploadRoute = ApiPublicBsUploadRouteImport.update({
+  id: '/api/public/bs-upload',
+  path: '/api/public/bs-upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/results/$runId': typeof ResultsRunIdRoute
   '/run/$runId': typeof RunRunIdRoute
+  '/api/public/bs-upload': typeof ApiPublicBsUploadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/results/$runId': typeof ResultsRunIdRoute
   '/run/$runId': typeof RunRunIdRoute
+  '/api/public/bs-upload': typeof ApiPublicBsUploadRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/results/$runId': typeof ResultsRunIdRoute
   '/run/$runId': typeof RunRunIdRoute
+  '/api/public/bs-upload': typeof ApiPublicBsUploadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/results/$runId' | '/run/$runId'
+  fullPaths: '/' | '/results/$runId' | '/run/$runId' | '/api/public/bs-upload'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/results/$runId' | '/run/$runId'
-  id: '__root__' | '/' | '/results/$runId' | '/run/$runId'
+  to: '/' | '/results/$runId' | '/run/$runId' | '/api/public/bs-upload'
+  id:
+    | '__root__'
+    | '/'
+    | '/results/$runId'
+    | '/run/$runId'
+    | '/api/public/bs-upload'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ResultsRunIdRoute: typeof ResultsRunIdRoute
   RunRunIdRoute: typeof RunRunIdRoute
+  ApiPublicBsUploadRoute: typeof ApiPublicBsUploadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +97,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResultsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/bs-upload': {
+      id: '/api/public/bs-upload'
+      path: '/api/public/bs-upload'
+      fullPath: '/api/public/bs-upload'
+      preLoaderRoute: typeof ApiPublicBsUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +111,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ResultsRunIdRoute: ResultsRunIdRoute,
   RunRunIdRoute: RunRunIdRoute,
+  ApiPublicBsUploadRoute: ApiPublicBsUploadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

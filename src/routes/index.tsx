@@ -10,23 +10,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  listTestCases, listDevices, getQrStatus, uploadQr, uploadApk, runTest, listRuns,
+  listTestCases, listDevices, getQrStatus, runTest, listRuns,
 } from "@/lib/qserve.functions";
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-async function fileToBase64(file: File): Promise<string> {
-  const buf = await file.arrayBuffer();
-  let bin = "";
-  const bytes = new Uint8Array(buf);
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(bin);
-}
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -78,10 +68,13 @@ function Dashboard() {
     setApkUrl(null);
     setApkUploading(true);
     try {
-      const base64 = await fileToBase64(file);
-      const res = await uploadApk({ data: { filename: file.name, base64 } });
-      setApkUrl(res.app_url);
-      toast.success("APK uploaded to BrowserStack", { description: res.app_url });
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const r = await fetch("/api/public/bs-upload?kind=apk", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
+      setApkUrl(j.app_url);
+      toast.success("APK uploaded to BrowserStack", { description: j.app_url });
     } catch (e: any) {
       toast.error("APK upload failed", { description: e.message });
       setApkFile(null);
@@ -94,11 +87,14 @@ function Dashboard() {
     if (!file) return;
     setQrUploading(true);
     try {
-      const base64 = await fileToBase64(file);
-      const res = await uploadQr({ data: { filename: file.name, base64 } });
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      const r = await fetch(`/api/public/bs-upload?kind=media&filename=${encodeURIComponent(file.name)}`, { method: "POST", body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
       setQrUploaded(true);
-      setQrFilename(res.filename);
-      toast.success("QR image uploaded", { description: res.media_url });
+      setQrFilename(file.name);
+      toast.success("QR image uploaded", { description: j.media_url });
     } catch (e: any) {
       toast.error("QR upload failed", { description: e.message });
     } finally {
