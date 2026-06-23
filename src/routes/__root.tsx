@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Qserve Test Manager" },
+      { name: "description", content: "Test your build with ease" },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Qserve Test Manager" },
+      { property: "og:description", content: "Test your build with ease" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Qserve Test Manager" },
+      { name: "twitter:description", content: "Test your build with ease" },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/325b2002-bd44-44e5-a2ee-57fb97fecc16/id-preview-41f86c8e--900dfc3c-8627-443f-a4f6-58dff9f5d17c.lovable.app-1782236681602.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/325b2002-bd44-44e5-a2ee-57fb97fecc16/id-preview-41f86c8e--900dfc3c-8627-443f-a4f6-58dff9f5d17c.lovable.app-1782236681602.png" },
     ],
     links: [
       {
