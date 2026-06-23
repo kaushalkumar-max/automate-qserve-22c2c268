@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import AppHeader from "@/components/qserve/AppHeader";
-import { getStatus, getResults } from "@/lib/qserve.functions";
+import { getStatus, getResults, tickRun } from "@/lib/qserve.functions";
 
 export const Route = createFileRoute("/run/$runId")({
   component: TestRunning,
@@ -24,6 +24,7 @@ function TestRunning() {
 
     const tick = async () => {
       try {
+        await tickRun({ data: { run_id: runId } });
         const s = await getStatus({ data: { run_id: runId } });
         if (cancelled) return;
         setStatus(s);
@@ -31,12 +32,12 @@ function TestRunning() {
           lastMsgRef.current = s.message;
           setLogs((prev) => [...prev, { ts: new Date().toLocaleTimeString(), msg: s.message! }]);
         }
-        if (s.status === "completed") {
+        if (s.status === "completed" || s.status === "passed" || s.status === "failed") {
           navigate({ to: "/results/$runId", params: { runId }, replace: true });
           return;
         }
       } catch {}
-      timer = setTimeout(tick, 4000);
+      timer = setTimeout(tick, 1500);
     };
 
     getResults({ data: { run_id: runId } }).then(setMeta).catch(() => toast.error("Run not found"));
