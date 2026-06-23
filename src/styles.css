@@ -142,3 +142,22 @@
     color: var(--color-foreground);
   }
 }
+
+@layer utilities {
+  .font-mono-heading {
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-feature-settings: "ss01", "cv11";
+  }
+  .console-line {
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .pulse-dot {
+    animation: qserve-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes qserve-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.85); }
+  }
+}
