@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RunRunIdRouteImport } from './routes/run.$runId'
 import { Route as ResultsRunIdRouteImport } from './routes/results.$runId'
+import { Route as ApiPublicRunnerUpdateRouteImport } from './routes/api/public/runner-update'
+import { Route as ApiPublicRunnerNextRouteImport } from './routes/api/public/runner-next'
 import { Route as ApiPublicBsUploadRouteImport } from './routes/api/public/bs-upload'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +31,16 @@ const ResultsRunIdRoute = ResultsRunIdRouteImport.update({
   path: '/results/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRunnerUpdateRoute = ApiPublicRunnerUpdateRouteImport.update({
+  id: '/api/public/runner-update',
+  path: '/api/public/runner-update',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRunnerNextRoute = ApiPublicRunnerNextRouteImport.update({
+  id: '/api/public/runner-next',
+  path: '/api/public/runner-next',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicBsUploadRoute = ApiPublicBsUploadRouteImport.update({
   id: '/api/public/bs-upload',
   path: '/api/public/bs-upload',
@@ -40,12 +52,16 @@ export interface FileRoutesByFullPath {
   '/results/$runId': typeof ResultsRunIdRoute
   '/run/$runId': typeof RunRunIdRoute
   '/api/public/bs-upload': typeof ApiPublicBsUploadRoute
+  '/api/public/runner-next': typeof ApiPublicRunnerNextRoute
+  '/api/public/runner-update': typeof ApiPublicRunnerUpdateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/results/$runId': typeof ResultsRunIdRoute
   '/run/$runId': typeof RunRunIdRoute
   '/api/public/bs-upload': typeof ApiPublicBsUploadRoute
+  '/api/public/runner-next': typeof ApiPublicRunnerNextRoute
+  '/api/public/runner-update': typeof ApiPublicRunnerUpdateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,18 +69,34 @@ export interface FileRoutesById {
   '/results/$runId': typeof ResultsRunIdRoute
   '/run/$runId': typeof RunRunIdRoute
   '/api/public/bs-upload': typeof ApiPublicBsUploadRoute
+  '/api/public/runner-next': typeof ApiPublicRunnerNextRoute
+  '/api/public/runner-update': typeof ApiPublicRunnerUpdateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/results/$runId' | '/run/$runId' | '/api/public/bs-upload'
+  fullPaths:
+    | '/'
+    | '/results/$runId'
+    | '/run/$runId'
+    | '/api/public/bs-upload'
+    | '/api/public/runner-next'
+    | '/api/public/runner-update'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/results/$runId' | '/run/$runId' | '/api/public/bs-upload'
+  to:
+    | '/'
+    | '/results/$runId'
+    | '/run/$runId'
+    | '/api/public/bs-upload'
+    | '/api/public/runner-next'
+    | '/api/public/runner-update'
   id:
     | '__root__'
     | '/'
     | '/results/$runId'
     | '/run/$runId'
     | '/api/public/bs-upload'
+    | '/api/public/runner-next'
+    | '/api/public/runner-update'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -72,6 +104,8 @@ export interface RootRouteChildren {
   ResultsRunIdRoute: typeof ResultsRunIdRoute
   RunRunIdRoute: typeof RunRunIdRoute
   ApiPublicBsUploadRoute: typeof ApiPublicBsUploadRoute
+  ApiPublicRunnerNextRoute: typeof ApiPublicRunnerNextRoute
+  ApiPublicRunnerUpdateRoute: typeof ApiPublicRunnerUpdateRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -97,6 +131,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResultsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/runner-update': {
+      id: '/api/public/runner-update'
+      path: '/api/public/runner-update'
+      fullPath: '/api/public/runner-update'
+      preLoaderRoute: typeof ApiPublicRunnerUpdateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/runner-next': {
+      id: '/api/public/runner-next'
+      path: '/api/public/runner-next'
+      fullPath: '/api/public/runner-next'
+      preLoaderRoute: typeof ApiPublicRunnerNextRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/bs-upload': {
       id: '/api/public/bs-upload'
       path: '/api/public/bs-upload'
@@ -112,6 +160,8 @@ const rootRouteChildren: RootRouteChildren = {
   ResultsRunIdRoute: ResultsRunIdRoute,
   RunRunIdRoute: RunRunIdRoute,
   ApiPublicBsUploadRoute: ApiPublicBsUploadRoute,
+  ApiPublicRunnerNextRoute: ApiPublicRunnerNextRoute,
+  ApiPublicRunnerUpdateRoute: ApiPublicRunnerUpdateRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
