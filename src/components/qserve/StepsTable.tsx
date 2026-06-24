@@ -1,6 +1,6 @@
 import { CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 
-type Step = { name: string; status: string; error?: string };
+type Step = { name: string; status?: string; passed?: boolean; error?: string };
 
 export default function StepsTable({
   steps = [],
@@ -12,13 +12,15 @@ export default function StepsTable({
   const map = Object.fromEntries(steps.map((s) => [s.name, s]));
   const rows = (plannedSteps.length ? plannedSteps : steps.map((s) => s.name)).map((name, idx) => {
     const s = map[name];
-    return {
-      idx: idx + 1,
-      name,
-      status: s ? s.status : "pending",
-      error: s ? s.error || "" : "",
-    };
+    let status: "pass" | "fail" | "skipped" | "pending" = "pending";
+    if (s) {
+      if (s.status === "pass" || s.passed === true) status = "pass";
+      else if (s.status === "fail" || s.passed === false) status = "fail";
+      else if (s.status === "skipped") status = "skipped";
+    }
+    return { idx: idx + 1, name, status, error: s?.error || "" };
   });
+
 
   return (
     <div

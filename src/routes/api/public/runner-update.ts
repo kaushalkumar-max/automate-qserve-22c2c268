@@ -12,6 +12,7 @@ const ALLOWED_PATCH_FIELDS = new Set([
   "message",
   "duration_seconds",
   "public_url",
+  "video_url",
   "current_step_index",
   "current_step_name",
   "session_id",

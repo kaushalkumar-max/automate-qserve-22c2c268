@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  CheckCircle2, XCircle, RotateCcw, Video, ExternalLink, Clock, Smartphone,
+  CheckCircle2, XCircle, RotateCcw, Video, Clock, Smartphone,
 } from "lucide-react";
 import AppHeader from "@/components/qserve/AppHeader";
 import StepsTable from "@/components/qserve/StepsTable";
@@ -107,18 +107,32 @@ function Results() {
               <Video className="w-4 h-4" strokeWidth={2.25} /> Video Recording
             </a>
           )}
-          {run.public_url && (
+          {run.video_url && (
             <a
-              data-testid="bs-session-link"
-              href={run.public_url}
+              data-testid="video-link"
+              href={run.video_url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 border border-[#30363d] text-[#8b949e] px-5 py-2.5 rounded-md text-sm hover:bg-[#1f242c] hover:text-white transition-colors"
+              className="inline-flex items-center gap-2 border border-[#30363d] text-white px-5 py-2.5 rounded-md text-sm hover:bg-[#1f242c] transition-colors"
             >
-              <ExternalLink className="w-4 h-4" /> BrowserStack Session
+              <Video className="w-4 h-4" strokeWidth={2.25} /> Open Video
             </a>
           )}
         </section>
+
+        {run.video_url && (
+          <section data-testid="video-section" className="space-y-3">
+            <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#8b949e]">
+              Test recording
+            </div>
+            <video
+              src={run.video_url}
+              controls
+              playsInline
+              className="w-full max-w-2xl rounded-md border border-[#30363d] bg-black"
+            />
+          </section>
+        )}
 
         <section data-testid="steps-section" className="space-y-3">
           <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#8b949e]">
@@ -127,34 +141,34 @@ function Results() {
           <StepsTable steps={run.steps || []} plannedSteps={run.step_names || []} />
         </section>
 
-        {run.screenshots && run.screenshots.length > 0 && (
-          <section data-testid="screenshots-section" className="space-y-3">
-            <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#8b949e]">
-              Step screenshots ({run.screenshots.length})
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {run.screenshots.map((s: string, i: number) => {
-                const src = s.startsWith("http") || s.startsWith("data:") ? s : `data:image/png;base64,${s}`;
-                return (
-                  <a
-                    key={i}
-                    data-testid={`screenshot-${i}`}
-                    href={src}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block border border-[#30363d] rounded-md overflow-hidden hover:border-[#2563eb] transition-colors bg-[#0d1117]"
-                  >
-                    <img src={src} alt={`screenshot-${i}`} className="w-full h-48 object-cover" />
-                  </a>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        {(() => {
+          const failedStep = (run.steps || []).find(
+            (s: any) => s.status === "fail" || s.passed === false,
+          );
+          const shot = failedStep?.screenshot || (run.screenshots && run.screenshots[0]);
+          if (!failedStep || !shot) return null;
+          const src = shot.startsWith("http") || shot.startsWith("data:")
+            ? shot : `data:image/png;base64,${shot}`;
+          return (
+            <section data-testid="failure-screenshot" className="space-y-3">
+              <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#f85149]">
+                Failure screenshot — {failedStep.name}
+              </div>
+              <a href={src} target="_blank" rel="noreferrer" className="block">
+                <img
+                  src={src}
+                  alt="failure"
+                  className="max-w-md rounded-md border border-[#f85149]/60 bg-black"
+                />
+              </a>
+            </section>
+          );
+        })()}
       </main>
     </div>
   );
 }
+
 
 function Meta({
   label, value, icon, mono,
