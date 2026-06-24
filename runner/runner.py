@@ -176,9 +176,9 @@ def make_driver(run: dict) -> webdriver.Remote:
 
     qr_media = run.get("qr_media_url")
     if qr_media:
-        # BrowserStack media injection — file appears in device gallery.
-        # Must be a top-level capability, NOT inside bstack:options.
-        opts.set_capability("browserstack.media", [qr_media])
+        # BrowserStack media injection — uploaded file appears in device gallery.
+        # W3C: use `uploadMedia` inside bstack:options (array of media:// URLs).
+        bstack["uploadMedia"] = [qr_media]
     opts.set_capability("bstack:options", bstack)
 
     return webdriver.Remote(BS_HUB, options=opts)
