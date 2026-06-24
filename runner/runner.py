@@ -224,8 +224,8 @@ def scan_media(driver):
 
 def tap_pct(driver, x_pct, y_pct):
     s = driver.get_window_size()
-    driver.execute_script("mobile: clickGesture",
-                          {"x": int(s["width"] * x_pct), "y": int(s["height"] * y_pct)})
+    tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
+
 
 def tap_xy(driver, x, y):
     """Tap absolute coords using W3C pointer actions (universally supported)."""
