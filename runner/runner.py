@@ -44,10 +44,10 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-# When the picker opens a QR image preview, tap inside the QR itself — roughly
-# center-height and slightly left of center-width — instead of the preview strip.
-PHOTO_X_PCT, PHOTO_Y_PCT = 0.44, 0.52
-QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.44, 0.52
+# When the picker opens a QR image preview, tap inside the QR itself — left of
+# center and a bit lower — instead of the preview strip.
+PHOTO_X_PCT, PHOTO_Y_PCT = 0.37, 0.56
+QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.37, 0.56
 SIZE_VALUES = ["1"] * 7
 
 
@@ -404,8 +404,8 @@ def tap_visible_qr_thumbnail(driver) -> bool:
         if bounds:
             cy, cx = sorted(bounds)[0]
             tap_xy(driver,
-                   int(cx - screen["width"] * 0.03),
-                   cy)
+                   int(cx - screen["width"] * 0.06),
+                   int(cy + screen["height"] * 0.025))
             return True
     except Exception:
         pass
