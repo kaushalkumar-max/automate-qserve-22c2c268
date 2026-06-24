@@ -44,10 +44,11 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-# When the picker opens a QR image preview, tap inside the QR itself — further
-# left and lower — instead of the preview strip.
-PHOTO_X_PCT, PHOTO_Y_PCT = 0.30, 0.62
-QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.30, 0.62
+# Galaxy S23 photo picker fallback: first thumbnail in the Recent grid.
+# Normal flow uses element bounds; these are only used if Android exposes no
+# usable thumbnail nodes.
+PHOTO_X_PCT, PHOTO_Y_PCT = 180 / 1080, 920 / 2340
+QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.50, 0.50
 SIZE_VALUES = ["1"] * 7
 
 
@@ -268,22 +269,33 @@ def tap_inside_qr_image_bounds(driver, x1: int, y1: int, x2: int, y2: int) -> bo
         return False
 
 def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
-    """Click the first real media thumbnail by bounds, not fixed coordinates.
-    Android Photo Picker often exposes the image itself as non-clickable while
-    its parent handles taps, so center-tapping the thumbnail bounds is safer.
+    """Tap the first real media thumbnail in the Android picker grid.
+
+    Do not use a fixed center-screen coordinate here: on Galaxy S23 the QR is
+    column 1 / row 1 of the Recent grid, around x=180,y=920, while the old
+    center tap landed in blank/preview space. We prefer element bounds and only
+    let the caller fall back to the Galaxy coordinate if no thumbnail is found.
     """
     locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
+         '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))'),
         (AppiumBy.ANDROID_UIAUTOMATOR,
          'new UiSelector().resourceIdMatches(".*:id/icon_thumbnail").instance(0)'),
         (AppiumBy.ANDROID_UIAUTOMATOR,
          'new UiSelector().resourceIdMatches(".*:id/picker_item_thumbnail").instance(0)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView").descriptionMatches(".+").instance(0)'),
         (AppiumBy.XPATH, '//*[contains(@resource-id,"icon_thumbnail") or contains(@resource-id,"picker_item_thumbnail")]'),
         (AppiumBy.XPATH, '//androidx.recyclerview.widget.RecyclerView//*[@clickable="true"]'),
-        (AppiumBy.XPATH, '(//android.widget.ImageView)[position() > 1]'),
+        (AppiumBy.XPATH, '//android.widget.ImageView'),
     ]
     screen = driver.get_window_size()
-    min_y = max(180, int(screen["height"] * 0.12))
-    max_y = int(screen["height"] * 0.90)
+    min_y = int(screen["height"] * 0.25)
+    max_y = int(screen["height"] * 0.62)
+    max_x = int(screen["width"] * 0.48)
 
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -296,8 +308,8 @@ def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
                         loc, size = el.location, el.size
                         cx = int(loc["x"] + size["width"] / 2)
                         cy = int(loc["y"] + size["height"] / 2)
-                        if (size.get("width", 0) >= 24 and size.get("height", 0) >= 24
-                                and 0 <= cx <= screen["width"] and min_y <= cy <= max_y):
+                        if (size.get("width", 0) >= 40 and size.get("height", 0) >= 40
+                                and 0 <= cx <= max_x and min_y <= cy <= max_y):
                             candidates.append((cy, cx, el))
                     except Exception:
                         continue
@@ -312,14 +324,15 @@ def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
             candidates = []
             for node in re.findall(r"<[^>]+>", source):
                 lower = node.lower()
-                if not any(key in lower for key in ("icon_thumbnail", "picker_item_thumbnail", "thumbnail")):
+                if not any(key in lower for key in (
+                        "icon_thumbnail", "picker_item_thumbnail", "thumbnail", "imageview", "item_root")):
                     continue
                 m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
                 if not m:
                     continue
                 x1, y1, x2, y2 = map(int, m.groups())
                 cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                if (x2 - x1) >= 24 and (y2 - y1) >= 24 and min_y <= cy <= max_y:
+                if (x2 - x1) >= 40 and (y2 - y1) >= 40 and cx <= max_x and min_y <= cy <= max_y:
                     candidates.append((cy, cx))
             if candidates:
                 cy, cx = sorted(candidates)[0]
@@ -334,82 +347,13 @@ def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
 
 
 def tap_visible_qr_thumbnail(driver) -> bool:
-    """Tap the visible QR thumbnail in Android's DocumentsUI/Photo Picker.
+    """Tap the QR thumbnail, using dynamic bounds before coordinate fallback."""
+    if tap_first_picker_thumbnail(driver, timeout=4):
+        return True
 
-    The current BrowserStack picker screenshot shows DocumentsUI "Recent" with
-    the injected QR as the first item under "Recent images" near the top-left.
-    A fixed center-screen tap misses it, so prefer real thumbnail bounds and
-    fall back to that visible top-left grid position as a percentage.
-    """
     screen = driver.get_window_size()
-    # Do not include the "Browse files in other apps" row. Its icons are also
-    # ImageViews and were being sorted before the real QR thumbnail, causing a
-    # tap on "Bug reports". Start just below that row.
-    min_y = int(screen["height"] * 0.38)
-    max_y = int(screen["height"] * 0.82)
-    max_x = int(screen["width"] * 0.50)
-
-    locators = [
-        (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().resourceIdMatches(".*:id/icon_thumb.*|.*:id/thumbnail.*|.*:id/icon_thumbnail.*").instance(0)'),
-        (AppiumBy.XPATH,
-         '//*[contains(@resource-id,"icon_thumb") or contains(@resource-id,"thumbnail") or contains(@resource-id,"icon_thumbnail")]'),
-        (AppiumBy.XPATH,
-         '//android.widget.ImageView[not(contains(@content-desc,"Gallery")) and not(contains(@content-desc,"My Files"))]'),
-    ]
-
-    candidates = []
-    for by, val in locators:
-        try:
-            for el in driver.find_elements(by, val):
-                try:
-                    loc, size = el.location, el.size
-                    w, h = size.get("width", 0), size.get("height", 0)
-                    cx, cy = int(loc["x"] + w / 2), int(loc["y"] + h / 2)
-                    if w >= 40 and h >= 40 and cx <= max_x and min_y <= cy <= max_y:
-                        candidates.append((cy, cx, el))
-                except Exception:
-                    continue
-        except Exception:
-            continue
-
-    for _, _, el in sorted(candidates, key=lambda item: (item[0], item[1])):
-        try:
-            loc, size = el.location, el.size
-            if tap_inside_qr_image_bounds(
-                    driver,
-                    int(loc["x"]), int(loc["y"]),
-                    int(loc["x"] + size.get("width", 0)),
-                    int(loc["y"] + size.get("height", 0))):
-                return True
-        except Exception:
-            pass
-        if tap_element_center(driver, el):
-            return True
-
-    try:
-        source = driver.page_source
-        bounds = []
-        for node in re.findall(r"<[^>]+>", source):
-            lower = node.lower()
-            if not any(key in lower for key in ("icon_thumb", "thumbnail", "imageview", "item_root")):
-                continue
-            m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
-            if not m:
-                continue
-            x1, y1, x2, y2 = map(int, m.groups())
-            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-            if (x2 - x1) >= 40 and (y2 - y1) >= 40 and cx <= max_x and min_y <= cy <= max_y:
-                bounds.append((cy, cx))
-        if bounds:
-            cy, cx = sorted(bounds)[0]
-            tap_xy(driver,
-                   int(cx - screen["width"] * 0.10),
-                   int(cy + screen["height"] * 0.05))
-            return True
-    except Exception:
-        pass
-
+    # Last resort for Galaxy S23 picker layout shown in the screenshot:
+    # column 1 / row 1 of Recent images, not the dead center of the screen.
     tap_pct(driver, PHOTO_X_PCT, PHOTO_Y_PCT)
     return True
 
@@ -521,7 +465,8 @@ def step_tap_photo(driver):
         pkg = ""
 
     if "documentsui" in pkg or "files" in pkg:
-        tap_visible_qr_thumbnail(driver)
+        if not tap_visible_qr_thumbnail(driver):
+            raise RuntimeError("QR thumbnail not found in picker")
         try:
             WebDriverWait(driver, 5).until(
                 lambda d: (not is_picker_package(d)) or has_any(d, [
