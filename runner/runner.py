@@ -279,7 +279,25 @@ def step_scan_qr(driver):
 def step_picker_open(driver):
     WebDriverWait(driver, 20).until(lambda d: "photopicker" in d.current_package.lower())
     time.sleep(0.5)
-def step_tap_photo(driver):    tap_xy(driver, PHOTO_X, PHOTO_Y); time.sleep(0.8)
+def step_tap_photo(driver):
+    # Tap the first image in the Photo Picker's "Recent images" grid.
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/icon_thumbnail").instance(0)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/picker_item_thumbnail").instance(0)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView").descriptionContains("Photo")'),
+        (AppiumBy.XPATH,
+         '(//android.widget.ImageView[contains(@resource-id,"thumbnail")])[1]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)'),
+    ]
+    if not try_click(driver, locators, timeout=5):
+        # Fallback: tap the first thumbnail position in the Recent images grid.
+        s = driver.get_window_size()
+        tap_xy(driver, int(s["width"] * 0.18), int(s["height"] * 0.42))
+    time.sleep(0.8)
 def step_done_picker(driver):
     if not try_click(driver, [
         (AppiumBy.XPATH, "//*[@text='Done']"),
