@@ -415,13 +415,16 @@ def execute(run: dict) -> None:
         driver = make_driver(run)
         rec.session_id = driver.session_id
         db_update(run_id, {"session_id": rec.session_id})
+        force_portrait(driver)
 
         failed_idx = None
         for idx, fn in enumerate(fns):
             rec.begin(idx)
             try:
+                force_portrait(driver)
                 fn(driver)
                 rec.pass_(idx)
+
             except Exception as e:
                 err = f"{type(e).__name__}: {str(e).splitlines()[0][:300]}"
                 rec.fail(idx, driver, err)
