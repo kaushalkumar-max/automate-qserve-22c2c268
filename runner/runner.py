@@ -44,7 +44,9 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-PHOTO_X_PCT, PHOTO_Y_PCT = 0.21, 0.48
+# Galaxy DocumentsUI screenshot: the QR is the first thumbnail under
+# "Recent images". Keep this below the "Bug reports/Gallery/My Files" app row.
+PHOTO_X_PCT, PHOTO_Y_PCT = 0.21, 0.51
 SIZE_VALUES = ["1"] * 7
 
 
@@ -325,9 +327,12 @@ def tap_visible_qr_thumbnail(driver) -> bool:
     fall back to that visible top-left grid position as a percentage.
     """
     screen = driver.get_window_size()
-    min_y = int(screen["height"] * 0.22)
-    max_y = int(screen["height"] * 0.72)
-    max_x = int(screen["width"] * 0.58)
+    # Do not include the "Browse files in other apps" row. Its icons are also
+    # ImageViews and were being sorted before the real QR thumbnail, causing a
+    # tap on "Bug reports". Start just below that row.
+    min_y = int(screen["height"] * 0.38)
+    max_y = int(screen["height"] * 0.82)
+    max_x = int(screen["width"] * 0.50)
 
     locators = [
         (AppiumBy.ANDROID_UIAUTOMATOR,
@@ -380,6 +385,52 @@ def tap_visible_qr_thumbnail(driver) -> bool:
 
     tap_pct(driver, PHOTO_X_PCT, PHOTO_Y_PCT)
     return True
+
+
+def is_picker_package(driver) -> bool:
+    try:
+        return any(pkg in driver.current_package.lower() for pkg in ("photopicker", "documentsui", "files"))
+    except Exception:
+        return False
+
+
+def wait_for_any(driver, locators, timeout=8):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for by, val in locators:
+            try:
+                els = driver.find_elements(by, val)
+                for el in els:
+                    try:
+                        if el.is_displayed():
+                            return el
+                    except Exception:
+                        return el
+            except Exception:
+                continue
+        time.sleep(0.25)
+    return None
+
+
+def has_any(driver, locators, timeout=1) -> bool:
+    return wait_for_any(driver, locators, timeout=timeout) is not None
+
+
+LOGIN_LOCATORS = [
+    (AppiumBy.ACCESSIBILITY_ID, "Login"),
+    (AppiumBy.ACCESSIBILITY_ID, "Log in"),
+    (AppiumBy.ACCESSIBILITY_ID, "LOGIN"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionMatches("(?i).*log ?in.*|.*login.*")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i).*log ?in.*|.*login.*")'),
+]
+
+HOME_LOCATORS = [
+    (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
+    (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
+    (AppiumBy.ACCESSIBILITY_ID, "Logout"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Logout")'),
+]
 
 
 def ensure_app_open(driver):
@@ -444,6 +495,16 @@ def step_tap_photo(driver):
 
     if "documentsui" in pkg or "files" in pkg:
         tap_visible_qr_thumbnail(driver)
+        try:
+            WebDriverWait(driver, 5).until(
+                lambda d: (not is_picker_package(d)) or has_any(d, [
+                    (AppiumBy.XPATH, "//*[@text='Done']"),
+                    (AppiumBy.ACCESSIBILITY_ID, "Done"),
+                    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)done|open|select")'),
+                ], timeout=0.5)
+            )
+        except Exception as e:
+            raise RuntimeError("QR image was not selected; picker stayed open after tapping thumbnail") from e
         time.sleep(1.0)
         return
 
@@ -467,7 +528,19 @@ def step_tap_photo(driver):
         # Try element-bounds-based tap as secondary attempt
         clicked = tap_first_picker_thumbnail(driver, timeout=4)
     if not clicked:
-        tap_visible_qr_thumbnail(driver)
+        clicked = tap_visible_qr_thumbnail(driver)
+    if not clicked:
+        raise RuntimeError("QR thumbnail not found in picker")
+    try:
+        WebDriverWait(driver, 5).until(
+            lambda d: (not is_picker_package(d)) or has_any(d, [
+                (AppiumBy.XPATH, "//*[@text='Done']"),
+                (AppiumBy.ACCESSIBILITY_ID, "Done"),
+                (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)done|open|select")'),
+            ], timeout=0.5)
+        )
+    except Exception as e:
+        raise RuntimeError("QR image was not selected; picker stayed open after tapping thumbnail") from e
     time.sleep(1.0)
 
 def step_done_picker(driver):
@@ -483,8 +556,17 @@ def step_return_app(driver):
     except Exception:
         driver.back()
         WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
-def step_tap_login(driver):    tap_pct(driver, LOGIN_X_PCT, LOGIN_Y_PCT); time.sleep(4)
-def step_wait_home(driver):    time.sleep(2)
+    if not has_any(driver, LOGIN_LOCATORS + HOME_LOCATORS, timeout=8):
+        raise RuntimeError("Returned to app, but neither Login nor Home screen appeared")
+def step_tap_login(driver):
+    if has_any(driver, HOME_LOCATORS, timeout=2):
+        return
+    if not try_click(driver, LOGIN_LOCATORS, timeout=4):
+        raise RuntimeError("Login button did not appear after QR selection")
+    time.sleep(4)
+def step_wait_home(driver):
+    if not has_any(driver, HOME_LOCATORS, timeout=12):
+        raise RuntimeError("Home screen did not appear after tapping Login")
 def step_logout(driver):
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Logout"))).click()
@@ -495,7 +577,7 @@ def step_catalogue(driver):
         (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
     ]):
-        tap_xy(driver, 888, 2219)
+        raise RuntimeError("Catalogue tab not found; user is not on the logged-in home screen")
     time.sleep(0.8)
 
 def step_brand_boys(driver):
