@@ -203,6 +203,24 @@ def force_portrait(driver):
             pass
 
 
+def scan_media(driver):
+    """Force MediaStore to re-index sdcard so BrowserStack-injected files
+    show up in the system Photo Picker / Gallery immediately."""
+    cmds = [
+        ["am", "broadcast", "-a", "android.intent.action.MEDIA_MOUNTED",
+         "-d", "file:///sdcard", "--receiver-include-background"],
+        ["content", "call", "--uri", "content://media",
+         "--method", "scan_volume", "--arg", "external_primary"],
+        ["cmd", "media_session", "scan"],
+    ]
+    for c in cmds:
+        try:
+            driver.execute_script("mobile: shell", {"command": c[0], "args": c[1:]})
+        except Exception:
+            pass
+    time.sleep(2)
+
+
 def tap_pct(driver, x_pct, y_pct):
     s = driver.get_window_size()
     driver.execute_script("mobile: clickGesture",
@@ -255,6 +273,7 @@ def draw_signature(driver):
 
 def step_open_app(driver):     ensure_app_open(driver); time.sleep(2)
 def step_scan_qr(driver):
+    scan_media(driver)
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"))).click()
 def step_picker_open(driver):
@@ -416,6 +435,7 @@ def execute(run: dict) -> None:
         rec.session_id = driver.session_id
         db_update(run_id, {"session_id": rec.session_id})
         force_portrait(driver)
+        scan_media(driver)
 
         failed_idx = None
         for idx, fn in enumerate(fns):
