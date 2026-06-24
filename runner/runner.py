@@ -280,24 +280,35 @@ def step_picker_open(driver):
     WebDriverWait(driver, 20).until(lambda d: "photopicker" in d.current_package.lower())
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # Tap the first image in the Photo Picker's "Recent images" grid.
+    # Tap the first image (QR code) in the Photo Picker's "Recent images" grid.
     locators = [
         (AppiumBy.ANDROID_UIAUTOMATOR,
          'new UiSelector().resourceIdMatches(".*:id/icon_thumbnail").instance(0)'),
         (AppiumBy.ANDROID_UIAUTOMATOR,
          'new UiSelector().resourceIdMatches(".*:id/picker_item_thumbnail").instance(0)'),
-        (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().className("android.widget.ImageView").descriptionContains("Photo")'),
         (AppiumBy.XPATH,
-         '(//android.widget.ImageView[contains(@resource-id,"thumbnail")])[1]'),
+         '(//*[contains(@resource-id,"thumbnail")])[1]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
+         '.childSelector(new UiSelector().className("android.widget.ImageView").clickable(true).instance(0))'),
         (AppiumBy.ANDROID_UIAUTOMATOR,
          'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)'),
+        (AppiumBy.XPATH, '(//android.widget.ImageView[@clickable="true"])[1]'),
     ]
-    if not try_click(driver, locators, timeout=5):
-        # Fallback: tap the first thumbnail position in the Recent images grid.
+    clicked = try_click(driver, locators, timeout=6)
+    if not clicked:
+        # Coordinate fallback based on Photo Picker "Recent images" grid layout.
         s = driver.get_window_size()
-        tap_xy(driver, int(s["width"] * 0.18), int(s["height"] * 0.42))
-    time.sleep(0.8)
+        for x_pct, y_pct in [(0.13, 0.42), (0.18, 0.45), (0.13, 0.48), (0.20, 0.40)]:
+            try:
+                tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
+                clicked = True
+                break
+            except Exception:
+                continue
+        if not clicked:
+            raise RuntimeError("Could not tap photo thumbnail in Photo Picker")
+    time.sleep(1.0)
 def step_done_picker(driver):
     if not try_click(driver, [
         (AppiumBy.XPATH, "//*[@text='Done']"),
