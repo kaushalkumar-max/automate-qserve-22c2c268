@@ -171,8 +171,8 @@ def make_driver(run: dict) -> webdriver.Remote:
         "deviceLogs": True,
         "deviceOrientation": "portrait",
         "disableAnimations": "true",
-        "enableShellCommands": "true",
     }
+
 
     qr_media = run.get("qr_media_url")
     if qr_media:
