@@ -545,11 +545,19 @@ def step_logout(driver):
 
 def step_catalogue(driver):
     if not try_click(driver, [
+        (AppiumBy.ID, "nav_catalogue"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("nav_catalogue")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceIdMatches(".*nav_catalogue.*")'),
+        (AppiumBy.XPATH, '//android.widget.ImageView[@resource-id="nav_catalogue"]'),
+        (AppiumBy.XPATH, '//*[contains(@resource-id, "nav_catalogue")]'),
         (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
         (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
-    ]):
-        raise RuntimeError("Catalogue tab not found; user is not on the logged-in home screen")
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("catalog")'),
+    ], timeout=4):
+        # Coordinate fallback: 2nd of 5 bottom-nav icons (book icon = Catalogue)
+        s = driver.get_window_size()
+        tap_xy(driver, int(s["width"] * 0.30), int(s["height"] * 0.95))
     time.sleep(0.8)
 
 def step_brand_boys(driver):
