@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  CheckCircle2, XCircle, RotateCcw, Video, ExternalLink, Clock, Smartphone,
+  CheckCircle2, XCircle, RotateCcw, Video, Clock, Smartphone,
 } from "lucide-react";
 import AppHeader from "@/components/qserve/AppHeader";
 import StepsTable from "@/components/qserve/StepsTable";
