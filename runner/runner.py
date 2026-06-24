@@ -596,8 +596,10 @@ def step_done_picker(driver):
         lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
             'new UiSelector().text("Add")'),
         lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Done"),
+        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Add"),
+        # Android 14 uses a checkmark FAB button.
         lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().resourceId("android:id/button1")'),
+            'new UiSelector().resourceId("com.google.android.providers.media.module:id/button_add")'),
     ]:
         try:
             finder(driver).click()
@@ -606,9 +608,8 @@ def step_done_picker(driver):
         except Exception:
             continue
     if not tried:
-        # Top-right where the Done / checkmark appears in the Google picker.
-        size = driver.get_window_size()
-        tap_xy(driver, int(size["width"] * 0.86), int(size["height"] * 0.08))
+        # Pixel 8 - "Add" button is bottom-right area.
+        tap_xy(driver, 900, 2300)
     time.sleep(2)
 def step_return_app(driver):
     try:
