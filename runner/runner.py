@@ -284,7 +284,7 @@ def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
                             candidates.append((cy, cx, el))
                     except Exception:
                         continue
-                for _, _, el in sorted(candidates):
+                for _, _, el in sorted(candidates, key=lambda item: (item[0], item[1])):
                     if tap_element_center(driver, el):
                         return True
             except Exception:
@@ -353,7 +353,7 @@ def tap_visible_qr_thumbnail(driver) -> bool:
         except Exception:
             continue
 
-    for _, _, el in sorted(candidates):
+    for _, _, el in sorted(candidates, key=lambda item: (item[0], item[1])):
         if tap_element_center(driver, el):
             return True
 
