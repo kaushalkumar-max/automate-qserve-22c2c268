@@ -44,7 +44,7 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-PHOTO_X, PHOTO_Y = 540, 1344
+PHOTO_X_PCT, PHOTO_Y_PCT = 0.21, 0.48
 SIZE_VALUES = ["1"] * 7
 
 
