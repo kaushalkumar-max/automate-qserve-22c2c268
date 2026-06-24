@@ -430,11 +430,23 @@ def step_scan_qr(driver):
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"))).click()
 def step_picker_open(driver):
-    WebDriverWait(driver, 20).until(lambda d: "photopicker" in d.current_package.lower())
+    WebDriverWait(driver, 20).until(
+        lambda d: any(pkg in d.current_package.lower() for pkg in ("photopicker", "documentsui", "files"))
+    )
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # The QR is the first thumbnail in the "Recent images" grid.
+    # The QR is the first visible thumbnail under "Recent images".
     time.sleep(1)  # let picker finish rendering thumbs
+    try:
+        pkg = driver.current_package.lower()
+    except Exception:
+        pkg = ""
+
+    if "documentsui" in pkg or "files" in pkg:
+        tap_visible_qr_thumbnail(driver)
+        time.sleep(1.0)
+        return
+
     selectors = [
         'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
         '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
@@ -455,8 +467,7 @@ def step_tap_photo(driver):
         # Try element-bounds-based tap as secondary attempt
         clicked = tap_first_picker_thumbnail(driver, timeout=4)
     if not clicked:
-        # Galaxy S23 (1080x2340) photo picker: col 1, row 1 of recent images grid
-        tap_xy(driver, 180, 920)
+        tap_visible_qr_thumbnail(driver)
     time.sleep(1.0)
 
 def step_done_picker(driver):
