@@ -536,8 +536,9 @@ def step_picker_open(driver):
     )
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # The QR is the first visible thumbnail under "Recent images".
-    time.sleep(1)  # let picker finish rendering thumbs
+    # Let the Android photo picker fully render.
+    time.sleep(2)
+
     try:
         pkg = driver.current_package.lower()
     except Exception:
@@ -559,48 +560,55 @@ def step_tap_photo(driver):
         time.sleep(1.0)
         return
 
+    # Pixel 8 / Google photo picker locators — first item in the Recent grid.
     selectors = [
-        'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
-        '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
-        'new UiSelector().resourceIdMatches(".*photopicker.*")'
-        '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
+        'new UiSelector().resourceId("android:id/media_tile").instance(0)',
+        'new UiSelector().resourceId("com.google.android.providers.media.module:id/icon_thumbnail").instance(0)',
+        'new UiSelector().className("androidx.recyclerview.widget.RecyclerView").childSelector(new UiSelector().index(0))',
         'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)',
-        'new UiSelector().descriptionContains("Photo").instance(0)',
     ]
-    clicked = False
     for sel in selectors:
         try:
-            driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel).click()
-            clicked = True
+            el = driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel)
+            el.click()
+            time.sleep(1)
+            return
+        except Exception:
+            continue
+
+    # Fallback: dynamic bounds-based first thumbnail scan.
+    if tap_first_picker_thumbnail(driver, timeout=4):
+        time.sleep(1)
+        return
+
+    # Final fallback: tap the first thumbnail coordinate (Pixel 8 / 1080x2400).
+    size = driver.get_window_size()
+    tap_xy(driver, int(size["width"] * 0.16), int(size["height"] * 0.28))
+    time.sleep(1)
+
+
+def step_done_picker(driver):
+    tried = False
+    for finder in [
+        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().text("Done")'),
+        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().text("Add")'),
+        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Done"),
+        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().resourceId("android:id/button1")'),
+    ]:
+        try:
+            finder(driver).click()
+            tried = True
             break
         except Exception:
             continue
-    if not clicked:
-        # Try element-bounds-based tap as secondary attempt
-        clicked = tap_first_picker_thumbnail(driver, timeout=4)
-    if not clicked:
-        clicked = tap_visible_qr_thumbnail(driver)
-    if not clicked:
-        raise RuntimeError("QR thumbnail not found in picker")
-    try:
-        WebDriverWait(driver, 5).until(
-            lambda d: (not is_picker_package(d)) or has_any(d, [
-                (AppiumBy.XPATH, "//*[@text='Done']"),
-                (AppiumBy.ACCESSIBILITY_ID, "Done"),
-                (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)done|open|select")'),
-            ], timeout=0.5)
-        )
-    except Exception as e:
-        raise RuntimeError("QR image was not selected; picker stayed open after tapping thumbnail") from e
-    time.sleep(1.0)
-
-def step_done_picker(driver):
-    if not try_click(driver, [
-        (AppiumBy.XPATH, "//*[@text='Done']"),
-        (AppiumBy.ACCESSIBILITY_ID, "Done"),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)done")'),
-    ], timeout=2):
-        tap_pct(driver, 0.86, 0.955)
+    if not tried:
+        # Top-right where the Done / checkmark appears in the Google picker.
+        size = driver.get_window_size()
+        tap_xy(driver, int(size["width"] * 0.86), int(size["height"] * 0.08))
+    time.sleep(2)
 def step_return_app(driver):
     try:
         WebDriverWait(driver, 15).until(lambda d: d.current_package == APP_PACKAGE)
