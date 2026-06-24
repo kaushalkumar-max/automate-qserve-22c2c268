@@ -366,21 +366,32 @@ def step_picker_open(driver):
     WebDriverWait(driver, 20).until(lambda d: "photopicker" in d.current_package.lower())
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # Tap the first image (QR code) in the Photo Picker's "Recent images" grid.
-    clicked = tap_first_picker_thumbnail(driver, timeout=8)
+    # The QR is the first thumbnail in the "Recent images" grid.
+    time.sleep(1)  # let picker finish rendering thumbs
+    selectors = [
+        'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
+        '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
+        'new UiSelector().resourceIdMatches(".*photopicker.*")'
+        '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
+        'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)',
+        'new UiSelector().descriptionContains("Photo").instance(0)',
+    ]
+    clicked = False
+    for sel in selectors:
+        try:
+            driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel).click()
+            clicked = True
+            break
+        except Exception:
+            continue
     if not clicked:
-        # Coordinate fallback based on Photo Picker "Recent images" grid layout.
-        s = driver.get_window_size()
-        for x_pct, y_pct in [(0.16, 0.30), (0.16, 0.36), (0.16, 0.42), (0.25, 0.30), (0.25, 0.42)]:
-            try:
-                tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
-                clicked = True
-                break
-            except Exception:
-                continue
-        if not clicked:
-            raise RuntimeError("Could not tap photo thumbnail in Photo Picker")
+        # Try element-bounds-based tap as secondary attempt
+        clicked = tap_first_picker_thumbnail(driver, timeout=4)
+    if not clicked:
+        # Galaxy S23 (1080x2340) photo picker: col 1, row 1 of recent images grid
+        tap_xy(driver, 180, 920)
     time.sleep(1.0)
+
 def step_done_picker(driver):
     if not try_click(driver, [
         (AppiumBy.XPATH, "//*[@text='Done']"),
