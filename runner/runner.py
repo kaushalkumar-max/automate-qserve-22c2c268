@@ -203,6 +203,24 @@ def force_portrait(driver):
             pass
 
 
+def scan_media(driver):
+    """Force MediaStore to re-index sdcard so BrowserStack-injected files
+    show up in the system Photo Picker / Gallery immediately."""
+    cmds = [
+        ["am", "broadcast", "-a", "android.intent.action.MEDIA_MOUNTED",
+         "-d", "file:///sdcard", "--receiver-include-background"],
+        ["content", "call", "--uri", "content://media",
+         "--method", "scan_volume", "--arg", "external_primary"],
+        ["cmd", "media_session", "scan"],
+    ]
+    for c in cmds:
+        try:
+            driver.execute_script("mobile: shell", {"command": c[0], "args": c[1:]})
+        except Exception:
+            pass
+    time.sleep(2)
+
+
 def tap_pct(driver, x_pct, y_pct):
     s = driver.get_window_size()
     driver.execute_script("mobile: clickGesture",
