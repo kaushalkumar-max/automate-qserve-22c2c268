@@ -186,6 +186,23 @@ def make_driver(run: dict) -> webdriver.Remote:
 
 # ---------- Action helpers ----------
 
+def force_portrait(driver):
+    """Snap device back to portrait. Cheap; called before every step."""
+    try:
+        if driver.orientation != "PORTRAIT":
+            driver.orientation = "PORTRAIT"
+    except Exception:
+        pass
+    for cmd in (
+        ["settings", "put", "system", "accelerometer_rotation", "0"],
+        ["settings", "put", "system", "user_rotation", "0"],
+    ):
+        try:
+            driver.execute_script("mobile: shell", {"command": cmd[0], "args": cmd[1:]})
+        except Exception:
+            pass
+
+
 def tap_pct(driver, x_pct, y_pct):
     s = driver.get_window_size()
     driver.execute_script("mobile: clickGesture",
