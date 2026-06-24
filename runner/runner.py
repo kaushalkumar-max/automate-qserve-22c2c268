@@ -273,6 +273,7 @@ def draw_signature(driver):
 
 def step_open_app(driver):     ensure_app_open(driver); time.sleep(2)
 def step_scan_qr(driver):
+    scan_media(driver)
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"))).click()
 def step_picker_open(driver):
