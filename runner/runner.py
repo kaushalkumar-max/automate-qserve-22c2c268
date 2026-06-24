@@ -15,6 +15,7 @@ Optional:
 from __future__ import annotations
 
 import os
+import re
 import time
 import traceback
 from datetime import datetime, timezone
@@ -229,6 +230,83 @@ def tap_pct(driver, x_pct, y_pct):
 def tap_xy(driver, x, y):
     driver.execute_script("mobile: clickGesture", {"x": x, "y": y})
 
+def tap_element_center(driver, el) -> bool:
+    try:
+        loc, size = el.location, el.size
+        if size.get("width", 0) < 8 or size.get("height", 0) < 8:
+            return False
+        tap_xy(driver,
+               int(loc["x"] + size["width"] / 2),
+               int(loc["y"] + size["height"] / 2))
+        return True
+    except Exception:
+        return False
+
+def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
+    """Click the first real media thumbnail by bounds, not fixed coordinates.
+    Android Photo Picker often exposes the image itself as non-clickable while
+    its parent handles taps, so center-tapping the thumbnail bounds is safer.
+    """
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/icon_thumbnail").instance(0)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/picker_item_thumbnail").instance(0)'),
+        (AppiumBy.XPATH, '//*[contains(@resource-id,"icon_thumbnail") or contains(@resource-id,"picker_item_thumbnail")]'),
+        (AppiumBy.XPATH, '//androidx.recyclerview.widget.RecyclerView//*[@clickable="true"]'),
+        (AppiumBy.XPATH, '(//android.widget.ImageView)[position() > 1]'),
+    ]
+    screen = driver.get_window_size()
+    min_y = max(180, int(screen["height"] * 0.12))
+    max_y = int(screen["height"] * 0.90)
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for by, val in locators:
+            try:
+                elements = driver.find_elements(by, val)
+                candidates = []
+                for el in elements:
+                    try:
+                        loc, size = el.location, el.size
+                        cx = int(loc["x"] + size["width"] / 2)
+                        cy = int(loc["y"] + size["height"] / 2)
+                        if (size.get("width", 0) >= 24 and size.get("height", 0) >= 24
+                                and 0 <= cx <= screen["width"] and min_y <= cy <= max_y):
+                            candidates.append((cy, cx, el))
+                    except Exception:
+                        continue
+                for _, _, el in sorted(candidates):
+                    if tap_element_center(driver, el):
+                        return True
+            except Exception:
+                continue
+
+        try:
+            source = driver.page_source
+            candidates = []
+            for node in re.findall(r"<[^>]+>", source):
+                lower = node.lower()
+                if not any(key in lower for key in ("icon_thumbnail", "picker_item_thumbnail", "thumbnail")):
+                    continue
+                m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+                if not m:
+                    continue
+                x1, y1, x2, y2 = map(int, m.groups())
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                if (x2 - x1) >= 24 and (y2 - y1) >= 24 and min_y <= cy <= max_y:
+                    candidates.append((cy, cx))
+            if candidates:
+                cy, cx = sorted(candidates)[0]
+                tap_xy(driver, cx, cy)
+                return True
+        except Exception:
+            pass
+
+        time.sleep(0.25)
+
+    return False
+
 def ensure_app_open(driver):
     try:
         driver.activate_app(APP_PACKAGE)
@@ -281,25 +359,11 @@ def step_picker_open(driver):
     time.sleep(0.5)
 def step_tap_photo(driver):
     # Tap the first image (QR code) in the Photo Picker's "Recent images" grid.
-    locators = [
-        (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().resourceIdMatches(".*:id/icon_thumbnail").instance(0)'),
-        (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().resourceIdMatches(".*:id/picker_item_thumbnail").instance(0)'),
-        (AppiumBy.XPATH,
-         '(//*[contains(@resource-id,"thumbnail")])[1]'),
-        (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
-         '.childSelector(new UiSelector().className("android.widget.ImageView").clickable(true).instance(0))'),
-        (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)'),
-        (AppiumBy.XPATH, '(//android.widget.ImageView[@clickable="true"])[1]'),
-    ]
-    clicked = try_click(driver, locators, timeout=6)
+    clicked = tap_first_picker_thumbnail(driver, timeout=8)
     if not clicked:
         # Coordinate fallback based on Photo Picker "Recent images" grid layout.
         s = driver.get_window_size()
-        for x_pct, y_pct in [(0.13, 0.42), (0.18, 0.45), (0.13, 0.48), (0.20, 0.40)]:
+        for x_pct, y_pct in [(0.16, 0.30), (0.16, 0.36), (0.16, 0.42), (0.25, 0.30), (0.25, 0.42)]:
             try:
                 tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
                 clicked = True
