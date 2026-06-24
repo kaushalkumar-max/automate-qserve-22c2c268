@@ -44,7 +44,7 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-PHOTO_X, PHOTO_Y = 540, 1344
+PHOTO_X_PCT, PHOTO_Y_PCT = 0.21, 0.48
 SIZE_VALUES = ["1"] * 7
 
 
@@ -315,6 +315,73 @@ def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
 
     return False
 
+
+def tap_visible_qr_thumbnail(driver) -> bool:
+    """Tap the visible QR thumbnail in Android's DocumentsUI/Photo Picker.
+
+    The current BrowserStack picker screenshot shows DocumentsUI "Recent" with
+    the injected QR as the first item under "Recent images" near the top-left.
+    A fixed center-screen tap misses it, so prefer real thumbnail bounds and
+    fall back to that visible top-left grid position as a percentage.
+    """
+    screen = driver.get_window_size()
+    min_y = int(screen["height"] * 0.22)
+    max_y = int(screen["height"] * 0.72)
+    max_x = int(screen["width"] * 0.58)
+
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/icon_thumb.*|.*:id/thumbnail.*|.*:id/icon_thumbnail.*").instance(0)'),
+        (AppiumBy.XPATH,
+         '//*[contains(@resource-id,"icon_thumb") or contains(@resource-id,"thumbnail") or contains(@resource-id,"icon_thumbnail")]'),
+        (AppiumBy.XPATH,
+         '//android.widget.ImageView[not(contains(@content-desc,"Gallery")) and not(contains(@content-desc,"My Files"))]'),
+    ]
+
+    candidates = []
+    for by, val in locators:
+        try:
+            for el in driver.find_elements(by, val):
+                try:
+                    loc, size = el.location, el.size
+                    w, h = size.get("width", 0), size.get("height", 0)
+                    cx, cy = int(loc["x"] + w / 2), int(loc["y"] + h / 2)
+                    if w >= 40 and h >= 40 and cx <= max_x and min_y <= cy <= max_y:
+                        candidates.append((cy, cx, el))
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    for _, _, el in sorted(candidates):
+        if tap_element_center(driver, el):
+            return True
+
+    try:
+        source = driver.page_source
+        bounds = []
+        for node in re.findall(r"<[^>]+>", source):
+            lower = node.lower()
+            if not any(key in lower for key in ("icon_thumb", "thumbnail", "imageview", "item_root")):
+                continue
+            m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+            if not m:
+                continue
+            x1, y1, x2, y2 = map(int, m.groups())
+            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+            if (x2 - x1) >= 40 and (y2 - y1) >= 40 and cx <= max_x and min_y <= cy <= max_y:
+                bounds.append((cy, cx))
+        if bounds:
+            cy, cx = sorted(bounds)[0]
+            tap_xy(driver, cx, cy)
+            return True
+    except Exception:
+        pass
+
+    tap_pct(driver, PHOTO_X_PCT, PHOTO_Y_PCT)
+    return True
+
+
 def ensure_app_open(driver):
     try:
         driver.activate_app(APP_PACKAGE)
@@ -363,11 +430,23 @@ def step_scan_qr(driver):
     WebDriverWait(driver, 30).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"))).click()
 def step_picker_open(driver):
-    WebDriverWait(driver, 20).until(lambda d: "photopicker" in d.current_package.lower())
+    WebDriverWait(driver, 20).until(
+        lambda d: any(pkg in d.current_package.lower() for pkg in ("photopicker", "documentsui", "files"))
+    )
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # The QR is the first thumbnail in the "Recent images" grid.
+    # The QR is the first visible thumbnail under "Recent images".
     time.sleep(1)  # let picker finish rendering thumbs
+    try:
+        pkg = driver.current_package.lower()
+    except Exception:
+        pkg = ""
+
+    if "documentsui" in pkg or "files" in pkg:
+        tap_visible_qr_thumbnail(driver)
+        time.sleep(1.0)
+        return
+
     selectors = [
         'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
         '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
@@ -388,8 +467,7 @@ def step_tap_photo(driver):
         # Try element-bounds-based tap as secondary attempt
         clicked = tap_first_picker_thumbnail(driver, timeout=4)
     if not clicked:
-        # Galaxy S23 (1080x2340) photo picker: col 1, row 1 of recent images grid
-        tap_xy(driver, 180, 920)
+        tap_visible_qr_thumbnail(driver)
     time.sleep(1.0)
 
 def step_done_picker(driver):
