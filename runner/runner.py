@@ -44,9 +44,10 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-# Galaxy DocumentsUI screenshot: the QR is the first thumbnail under
-# "Recent images". Keep this below the "Bug reports/Gallery/My Files" app row.
-PHOTO_X_PCT, PHOTO_Y_PCT = 0.21, 0.51
+# When the picker opens a QR image preview, tap inside the QR itself — roughly
+# center-height and slightly left of center-width — instead of the preview strip.
+PHOTO_X_PCT, PHOTO_Y_PCT = 0.44, 0.52
+QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.44, 0.52
 SIZE_VALUES = ["1"] * 7
 
 
@@ -252,6 +253,20 @@ def tap_element_center(driver, el) -> bool:
     except Exception:
         return False
 
+
+def tap_inside_qr_image_bounds(driver, x1: int, y1: int, x2: int, y2: int) -> bool:
+    """Tap the QR body, slightly left of center, within a detected image bound."""
+    try:
+        width, height = x2 - x1, y2 - y1
+        if width < 8 or height < 8:
+            return False
+        tap_xy(driver,
+               int(x1 + width * QR_IMAGE_TAP_X_PCT),
+               int(y1 + height * QR_IMAGE_TAP_Y_PCT))
+        return True
+    except Exception:
+        return False
+
 def tap_first_picker_thumbnail(driver, timeout=8) -> bool:
     """Click the first real media thumbnail by bounds, not fixed coordinates.
     Android Photo Picker often exposes the image itself as non-clickable while
@@ -359,6 +374,16 @@ def tap_visible_qr_thumbnail(driver) -> bool:
             continue
 
     for _, _, el in sorted(candidates, key=lambda item: (item[0], item[1])):
+        try:
+            loc, size = el.location, el.size
+            if tap_inside_qr_image_bounds(
+                    driver,
+                    int(loc["x"]), int(loc["y"]),
+                    int(loc["x"] + size.get("width", 0)),
+                    int(loc["y"] + size.get("height", 0))):
+                return True
+        except Exception:
+            pass
         if tap_element_center(driver, el):
             return True
 
@@ -378,7 +403,9 @@ def tap_visible_qr_thumbnail(driver) -> bool:
                 bounds.append((cy, cx))
         if bounds:
             cy, cx = sorted(bounds)[0]
-            tap_xy(driver, cx, cy)
+            tap_xy(driver,
+                   int(cx - screen["width"] * 0.03),
+                   cy)
             return True
     except Exception:
         pass
