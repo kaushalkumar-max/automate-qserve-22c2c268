@@ -51,7 +51,16 @@ export const Route = createFileRoute("/api/public/runner-next")({
           .maybeSingle();
 
         if (claimError) return json({ error: claimError.message }, 500);
-        return json({ job: claimed ?? null });
+        if (!claimed) return json({ job: null });
+
+        // Attach QR media URL (already uploaded to BrowserStack as media://...)
+        const { data: qr } = await supabaseAdmin
+          .from("qserve_settings")
+          .select("media_url")
+          .eq("key", "qr_media")
+          .maybeSingle();
+
+        return json({ job: { ...claimed, qr_media_url: qr?.media_url ?? null } });
       },
     },
   },
