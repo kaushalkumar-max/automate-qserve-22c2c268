@@ -228,7 +228,15 @@ def tap_pct(driver, x_pct, y_pct):
                           {"x": int(s["width"] * x_pct), "y": int(s["height"] * y_pct)})
 
 def tap_xy(driver, x, y):
-    driver.execute_script("mobile: clickGesture", {"x": x, "y": y})
+    """Tap absolute coords using W3C pointer actions (universally supported)."""
+    finger = PointerInput(interaction.POINTER_TOUCH, "finger")
+    actions = ActionBuilder(driver, mouse=finger)
+    actions.pointer_action.move_to_location(int(x), int(y))
+    actions.pointer_action.pointer_down()
+    actions.pointer_action.pause(0.1)
+    actions.pointer_action.pointer_up()
+    actions.perform()
+
 
 def tap_element_center(driver, el) -> bool:
     try:
