@@ -536,7 +536,6 @@ def step_picker_open(driver):
     )
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # Let the Android photo picker fully render.
     time.sleep(2)
 
     try:
@@ -544,6 +543,7 @@ def step_tap_photo(driver):
     except Exception:
         pkg = ""
 
+    # DocumentsUI / AOSP file picker path.
     if "documentsui" in pkg or "files" in pkg:
         if not tap_visible_qr_thumbnail(driver):
             raise RuntimeError("QR thumbnail not found in picker")
@@ -560,13 +560,15 @@ def step_tap_photo(driver):
         time.sleep(1.0)
         return
 
-    # Pixel 8 / Google photo picker locators — first item in the Recent grid.
+    # Try system photo picker resource IDs for Android 14 (Pixel 8).
     selectors = [
-        'new UiSelector().resourceId("android:id/media_tile").instance(0)',
         'new UiSelector().resourceId("com.google.android.providers.media.module:id/icon_thumbnail").instance(0)',
-        'new UiSelector().className("androidx.recyclerview.widget.RecyclerView").childSelector(new UiSelector().index(0))',
+        'new UiSelector().resourceId("com.google.android.providers.media.module:id/image_thumbnail").instance(0)',
+        'new UiSelector().resourceId("android:id/media_tile").instance(0)',
         'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)',
+        'new UiSelector().className("android.widget.ImageView").instance(1)',
     ]
+
     for sel in selectors:
         try:
             el = driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel)
@@ -581,9 +583,8 @@ def step_tap_photo(driver):
         time.sleep(1)
         return
 
-    # Final fallback: tap the first thumbnail coordinate (Pixel 8 / 1080x2400).
-    size = driver.get_window_size()
-    tap_xy(driver, int(size["width"] * 0.16), int(size["height"] * 0.28))
+    # Pixel 8 exact coordinate fallback (1080x2400, viewport top=132).
+    tap_xy(driver, 180, 580)
     time.sleep(1)
 
 
@@ -595,8 +596,10 @@ def step_done_picker(driver):
         lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
             'new UiSelector().text("Add")'),
         lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Done"),
+        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Add"),
+        # Android 14 uses a checkmark FAB button.
         lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().resourceId("android:id/button1")'),
+            'new UiSelector().resourceId("com.google.android.providers.media.module:id/button_add")'),
     ]:
         try:
             finder(driver).click()
@@ -605,9 +608,8 @@ def step_done_picker(driver):
         except Exception:
             continue
     if not tried:
-        # Top-right where the Done / checkmark appears in the Google picker.
-        size = driver.get_window_size()
-        tap_xy(driver, int(size["width"] * 0.86), int(size["height"] * 0.08))
+        # Pixel 8 - "Add" button is bottom-right area.
+        tap_xy(driver, 900, 2300)
     time.sleep(2)
 def step_return_app(driver):
     try:
