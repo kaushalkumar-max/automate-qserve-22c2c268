@@ -623,21 +623,33 @@ def step_logout(driver):
         (AppiumBy.ACCESSIBILITY_ID, "Logout"))).click()
 
 def step_catalogue(driver):
-    if not try_click(driver, [
-        (AppiumBy.ID, "nav_catalogue"),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("nav_catalogue")'),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceIdMatches(".*nav_catalogue.*")'),
-        (AppiumBy.XPATH, '//android.widget.ImageView[@resource-id="nav_catalogue"]'),
-        (AppiumBy.XPATH, '//*[contains(@resource-id, "nav_catalogue")]'),
-        (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
-        (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("catalog")'),
-    ], timeout=4):
-        # Coordinate fallback: 2nd of 5 bottom-nav icons (book icon = Catalogue)
-        s = driver.get_window_size()
-        tap_xy(driver, int(s["width"] * 0.30), int(s["height"] * 0.95))
-    time.sleep(0.8)
+    if catalogue_is_open(driver, timeout=1):
+        return
+
+    # 1) Tap the actual nav_catalogue/Catalogue element center. This works even
+    # when UiAutomator exposes the node as displayed but not "clickable".
+    if tap_first_locator_center(driver, CATALOGUE_NAV_LOCATORS, timeout=5):
+        if catalogue_is_open(driver, timeout=3):
+            return
+
+    # 2) Try normal click semantics as a secondary path.
+    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=2):
+        if catalogue_is_open(driver, timeout=3):
+            return
+
+    # 3) Parse XML bounds for the catalogue/bottom-nav node and tap its center.
+    if tap_catalogue_from_source_bounds(driver):
+        if catalogue_is_open(driver, timeout=3):
+            return
+
+    # 4) Coordinate fallback: 2nd bottom-nav slot, kept above Android gesture bar.
+    s = driver.get_window_size()
+    for x_pct, y_pct in ((0.30, 0.91), (0.30, 0.94), (0.25, 0.91), (0.35, 0.91)):
+        tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
+        if catalogue_is_open(driver, timeout=2):
+            return
+
+    raise RuntimeError("Catalogue tab did not open after tapping nav_catalogue")
 
 def step_brand_boys(driver):
     if not try_click(driver, [
