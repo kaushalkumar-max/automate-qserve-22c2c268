@@ -424,6 +424,85 @@ def try_click(driver, locators, timeout=3) -> bool:
             continue
     return False
 
+
+def tap_first_locator_center(driver, locators, timeout=3) -> bool:
+    """Tap the center of the first displayed element, even if Appium does not mark it clickable."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for by, val in locators:
+            try:
+                for el in driver.find_elements(by, val):
+                    try:
+                        if el.is_displayed() and tap_element_center(driver, el):
+                            return True
+                    except Exception:
+                        if tap_element_center(driver, el):
+                            return True
+            except Exception:
+                continue
+        time.sleep(0.2)
+    return False
+
+
+def tap_catalogue_from_source_bounds(driver) -> bool:
+    """Fallback for Flutter/React Native views: parse XML bounds and tap the Catalogue nav node."""
+    try:
+        source = driver.page_source
+        screen = driver.get_window_size()
+        candidates = []
+        for node in re.findall(r"<[^>]+>", source):
+            lower = node.lower()
+            if not any(key in lower for key in ("nav_catalogue", "catalogue", "catalog")):
+                continue
+            m = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+            if not m:
+                continue
+            x1, y1, x2, y2 = map(int, m.groups())
+            width, height = x2 - x1, y2 - y1
+            if width < 12 or height < 12:
+                continue
+            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+            # Prefer bottom-nav nodes over titles/list text with the same word.
+            bottom_rank = 0 if cy >= screen["height"] * 0.72 else 1
+            id_rank = 0 if "nav_catalogue" in lower else 1
+            candidates.append((bottom_rank, id_rank, cy, cx))
+        if not candidates:
+            return False
+        _, _, cy, cx = sorted(candidates)[0]
+        tap_xy(driver, cx, cy)
+        return True
+    except Exception:
+        return False
+
+
+CATALOGUE_NAV_LOCATORS = [
+    (AppiumBy.ID, "com.qart.qserve:id/nav_catalogue"),
+    (AppiumBy.ID, "nav_catalogue"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("com.qart.qserve:id/nav_catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("nav_catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceIdMatches(".*(:id/)?nav_catalogue$")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Catalogue Tab")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("catalog")'),
+    (AppiumBy.XPATH, '//*[@resource-id="com.qart.qserve:id/nav_catalogue" or @resource-id="nav_catalogue"]'),
+    (AppiumBy.XPATH, '//*[contains(@resource-id, "nav_catalogue")]'),
+    (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
+    (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
+]
+
+
+CATALOGUE_OPEN_LOCATORS = [
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Boys")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Boys")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Brand")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Brand")'),
+]
+
+
+def catalogue_is_open(driver, timeout=2) -> bool:
+    return has_any(driver, CATALOGUE_OPEN_LOCATORS, timeout=timeout)
+
 def draw_signature(driver):
     pad = WebDriverWait(driver, 30).until(EC.presence_of_element_located((
         AppiumBy.XPATH,
