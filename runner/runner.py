@@ -224,11 +224,19 @@ def scan_media(driver):
 
 def tap_pct(driver, x_pct, y_pct):
     s = driver.get_window_size()
-    driver.execute_script("mobile: clickGesture",
-                          {"x": int(s["width"] * x_pct), "y": int(s["height"] * y_pct)})
+    tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
+
 
 def tap_xy(driver, x, y):
-    driver.execute_script("mobile: clickGesture", {"x": x, "y": y})
+    """Tap absolute coords using W3C pointer actions (universally supported)."""
+    finger = PointerInput(interaction.POINTER_TOUCH, "finger")
+    actions = ActionBuilder(driver, mouse=finger)
+    actions.pointer_action.move_to_location(int(x), int(y))
+    actions.pointer_action.pointer_down()
+    actions.pointer_action.pause(0.1)
+    actions.pointer_action.pointer_up()
+    actions.perform()
+
 
 def tap_element_center(driver, el) -> bool:
     try:
@@ -358,21 +366,32 @@ def step_picker_open(driver):
     WebDriverWait(driver, 20).until(lambda d: "photopicker" in d.current_package.lower())
     time.sleep(0.5)
 def step_tap_photo(driver):
-    # Tap the first image (QR code) in the Photo Picker's "Recent images" grid.
-    clicked = tap_first_picker_thumbnail(driver, timeout=8)
+    # The QR is the first thumbnail in the "Recent images" grid.
+    time.sleep(1)  # let picker finish rendering thumbs
+    selectors = [
+        'new UiSelector().className("androidx.recyclerview.widget.RecyclerView")'
+        '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
+        'new UiSelector().resourceIdMatches(".*photopicker.*")'
+        '.childSelector(new UiSelector().className("android.widget.ImageView").instance(0))',
+        'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)',
+        'new UiSelector().descriptionContains("Photo").instance(0)',
+    ]
+    clicked = False
+    for sel in selectors:
+        try:
+            driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel).click()
+            clicked = True
+            break
+        except Exception:
+            continue
     if not clicked:
-        # Coordinate fallback based on Photo Picker "Recent images" grid layout.
-        s = driver.get_window_size()
-        for x_pct, y_pct in [(0.16, 0.30), (0.16, 0.36), (0.16, 0.42), (0.25, 0.30), (0.25, 0.42)]:
-            try:
-                tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
-                clicked = True
-                break
-            except Exception:
-                continue
-        if not clicked:
-            raise RuntimeError("Could not tap photo thumbnail in Photo Picker")
+        # Try element-bounds-based tap as secondary attempt
+        clicked = tap_first_picker_thumbnail(driver, timeout=4)
+    if not clicked:
+        # Galaxy S23 (1080x2340) photo picker: col 1, row 1 of recent images grid
+        tap_xy(driver, 180, 920)
     time.sleep(1.0)
+
 def step_done_picker(driver):
     if not try_click(driver, [
         (AppiumBy.XPATH, "//*[@text='Done']"),
