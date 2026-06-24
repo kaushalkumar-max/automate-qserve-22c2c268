@@ -169,7 +169,11 @@ def make_driver(run: dict) -> webdriver.Remote:
         "video": True,
         "networkLogs": True,
         "deviceLogs": True,
+        "deviceOrientation": "portrait",
+        "disableAnimations": "true",
+        "enableShellCommands": "true",
     }
+
     qr_media = run.get("qr_media_url")
     if qr_media:
         # BrowserStack media injection — file appears in device gallery.
@@ -181,6 +185,23 @@ def make_driver(run: dict) -> webdriver.Remote:
 
 
 # ---------- Action helpers ----------
+
+def force_portrait(driver):
+    """Snap device back to portrait. Cheap; called before every step."""
+    try:
+        if driver.orientation != "PORTRAIT":
+            driver.orientation = "PORTRAIT"
+    except Exception:
+        pass
+    for cmd in (
+        ["settings", "put", "system", "accelerometer_rotation", "0"],
+        ["settings", "put", "system", "user_rotation", "0"],
+    ):
+        try:
+            driver.execute_script("mobile: shell", {"command": cmd[0], "args": cmd[1:]})
+        except Exception:
+            pass
+
 
 def tap_pct(driver, x_pct, y_pct):
     s = driver.get_window_size()
@@ -394,13 +415,16 @@ def execute(run: dict) -> None:
         driver = make_driver(run)
         rec.session_id = driver.session_id
         db_update(run_id, {"session_id": rec.session_id})
+        force_portrait(driver)
 
         failed_idx = None
         for idx, fn in enumerate(fns):
             rec.begin(idx)
             try:
+                force_portrait(driver)
                 fn(driver)
                 rec.pass_(idx)
+
             except Exception as e:
                 err = f"{type(e).__name__}: {str(e).splitlines()[0][:300]}"
                 rec.fail(idx, driver, err)
