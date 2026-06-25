@@ -358,11 +358,34 @@ def tap_visible_qr_thumbnail(driver) -> bool:
     return True
 
 
+PICKER_PACKAGE_MARKERS = (
+    "photopicker",
+    "documentsui",
+    "files",
+    "providers.media.module",
+    "mediaprovider",
+)
+
+
+PICKER_SURFACE_LOCATORS = [
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("android:id/media_tile")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceIdMatches(".*:id/(icon_thumbnail|image_thumbnail|media_tile|button_add)")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)recent|photos|done|add")'),
+    (AppiumBy.ACCESSIBILITY_ID, "Done"),
+    (AppiumBy.ACCESSIBILITY_ID, "Add"),
+]
+
+
 def is_picker_package(driver) -> bool:
     try:
-        return any(pkg in driver.current_package.lower() for pkg in ("photopicker", "documentsui", "files"))
+        pkg = driver.current_package.lower()
+        return any(marker in pkg for marker in PICKER_PACKAGE_MARKERS)
     except Exception:
         return False
+
+
+def picker_is_open(driver) -> bool:
+    return is_picker_package(driver) or has_any(driver, PICKER_SURFACE_LOCATORS, timeout=0.5)
 
 
 def wait_for_any(driver, locators, timeout=8):
@@ -528,12 +551,26 @@ def draw_signature(driver):
 def step_open_app(driver):     ensure_app_open(driver); time.sleep(2)
 def step_scan_qr(driver):
     scan_media(driver)
-    WebDriverWait(driver, 30).until(EC.element_to_be_clickable(
-        (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"))).click()
+    scan_locators = [
+        (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"),
+        (AppiumBy.ACCESSIBILITY_ID, "Scan QR from Gallery"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Scan QR")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Scan QR")'),
+        (AppiumBy.XPATH, '//*[contains(@content-desc, "Scan QR") or contains(@text, "Scan QR")]'),
+    ]
+
+    for _ in range(3):
+        if try_click(driver, scan_locators, timeout=4) or tap_first_locator_center(driver, scan_locators, timeout=2):
+            try:
+                WebDriverWait(driver, 6).until(lambda d: picker_is_open(d))
+                return
+            except Exception:
+                time.sleep(0.5)
+
+    raise RuntimeError("Scan QR from gallery did not open the photo picker")
+
 def step_picker_open(driver):
-    WebDriverWait(driver, 20).until(
-        lambda d: any(pkg in d.current_package.lower() for pkg in ("photopicker", "documentsui", "files"))
-    )
+    WebDriverWait(driver, 20).until(lambda d: picker_is_open(d))
     time.sleep(0.5)
 def step_tap_photo(driver):
     time.sleep(2)
@@ -542,6 +579,8 @@ def step_tap_photo(driver):
         pkg = driver.current_package.lower()
     except Exception:
         pkg = ""
+
+    size = driver.get_window_size()
 
     # DocumentsUI / AOSP file picker path.
     if "documentsui" in pkg or "files" in pkg:
@@ -558,6 +597,14 @@ def step_tap_photo(driver):
         except Exception as e:
             raise RuntimeError("QR image was not selected; picker stayed open after tapping thumbnail") from e
         time.sleep(1.0)
+        return
+
+    # Pixel 8 / Android 14 Photo Picker: the first QR thumbnail is top-left.
+    # Appium often exposes decorative ImageViews first, so tap the known cell
+    # before trying selectors.
+    if "providers.media.module" in pkg or (size.get("width") == 1080 and size.get("height", 0) >= 2300):
+        tap_xy(driver, 180, 580)
+        time.sleep(1)
         return
 
     # Try system photo picker resource IDs for Android 14 (Pixel 8).
