@@ -44,10 +44,12 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-# Galaxy S23 photo picker fallback: first thumbnail in the Recent grid.
+# Android photo picker fallback: first thumbnail in the Recent grid.
 # Normal flow uses element bounds; these are only used if Android exposes no
-# usable thumbnail nodes.
-PHOTO_X_PCT, PHOTO_Y_PCT = 180 / 1080, 920 / 2340
+# usable thumbnail nodes. On Pixel 8 screenshots the first QR tile center is
+# ~x=190,y=850; the previous y=580 landed above the thumbnail row.
+PHOTO_X_PCT, PHOTO_Y_PCT = 190 / 1080, 850 / 2400
+PIXEL8_QR_TAP_X, PIXEL8_QR_TAP_Y = 190, 850
 QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.50, 0.50
 SIZE_VALUES = ["1"] * 7
 
@@ -242,6 +244,19 @@ def tap_xy(driver, x, y):
     actions.perform()
 
 
+def tap_xy_once(driver, x, y):
+    """Tap absolute coords, preferring Appium's native click gesture.
+
+    Some Android 14 photo picker surfaces ignore W3C pointer taps on grid
+    cells. Do not send both gestures, because a double tap can select then
+    immediately deselect the thumbnail.
+    """
+    try:
+        driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+    except Exception:
+        tap_xy(driver, x, y)
+
+
 def tap_element_center(driver, el) -> bool:
     try:
         loc, size = el.location, el.size
@@ -356,6 +371,54 @@ def tap_visible_qr_thumbnail(driver) -> bool:
     # column 1 / row 1 of Recent images, not the dead center of the screen.
     tap_pct(driver, PHOTO_X_PCT, PHOTO_Y_PCT)
     return True
+
+
+def picker_confirm_button(driver, timeout=1):
+    """Return the visible Add/Done/Open/Select button after a media item is selected."""
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceId("com.google.android.providers.media.module:id/button_add")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/(button_add|button_done|done|confirm|action_button)")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().textMatches("(?i)done|add|open|select")'),
+        (AppiumBy.ACCESSIBILITY_ID, "Done"),
+        (AppiumBy.ACCESSIBILITY_ID, "Add"),
+        (AppiumBy.ACCESSIBILITY_ID, "Open"),
+        (AppiumBy.ACCESSIBILITY_ID, "Select"),
+    ]
+    return wait_for_any(driver, locators, timeout=timeout)
+
+
+def picker_has_selected_media(driver) -> bool:
+    """Best-effort check that a thumbnail tap actually selected media."""
+    if not picker_is_open(driver):
+        return True
+
+    btn = picker_confirm_button(driver, timeout=0.8)
+    if btn is not None:
+        try:
+            return btn.is_enabled()
+        except Exception:
+            return True
+
+    try:
+        source = driver.page_source.lower()
+        return any(marker in source for marker in (
+            'checked="true"',
+            'selected="true"',
+            'content-desc="selected',
+            'selected media',
+            'button_add',
+        ))
+    except Exception:
+        return False
+
+
+def tap_and_confirm_qr_thumbnail(driver, x: int, y: int, wait_seconds=1.2) -> bool:
+    tap_xy_once(driver, x, y)
+    time.sleep(wait_seconds)
+    return picker_has_selected_media(driver)
 
 
 PICKER_PACKAGE_MARKERS = (
