@@ -935,8 +935,9 @@ def step_cart_tab(driver):
         (AppiumBy.ACCESSIBILITY_ID, "Cart Tab"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Cart")'),
     ], timeout=3):
-        # Uploaded script: 3rd tab of 4 at x=720, y=2270 on Pixel 8.
-        tap_absolute(driver, int(W * (720 / 1080)), int(H * (2270 / 2400)))
+        # Cart is the 5th (last) tab in the 5-tab bottom nav.
+        tap_absolute(driver, int(W * 0.90), int(H * 0.95))
+
     time.sleep(1)
 
 def step_save(driver):
