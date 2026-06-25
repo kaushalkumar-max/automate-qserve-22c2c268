@@ -24,6 +24,28 @@ export const getQrStatus = createServerFn({ method: "GET" }).handler(async () =>
   return { uploaded: !!data?.media_url, filename: data?.filename ?? "", media_url: data?.media_url ?? "" };
 });
 
+export const getApkStatus = createServerFn({ method: "GET" }).handler(async () => {
+  const client = await sb();
+  const { data: saved } = await client.from("qserve_settings").select("*").eq("key", "apk_build").maybeSingle();
+  if (saved?.media_url) {
+    return { uploaded: true, filename: saved.filename ?? "", app_url: saved.media_url ?? "" };
+  }
+
+  const { data: latest } = await client
+    .from("test_runs")
+    .select("app_url,build_name")
+    .not("app_url", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return {
+    uploaded: !!latest?.app_url,
+    filename: latest?.build_name ?? "",
+    app_url: latest?.app_url ?? "",
+  };
+});
+
 export const uploadApk = createServerFn({ method: "POST" })
   .inputValidator((d: { filename: string; base64: string }) => d)
   .handler(async ({ data }) => {
@@ -119,7 +141,7 @@ export const listRuns = createServerFn({ method: "GET" }).handler(async () => {
     .from("test_runs")
     .select("run_id,status,test_case_name,build_name,device,passed,created_at")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(2);
   return data || [];
 });
 

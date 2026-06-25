@@ -489,6 +489,14 @@ LOGIN_LOCATORS = [
     (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i).*log ?in.*|.*login.*")'),
 ]
 
+SCAN_QR_LOCATORS = [
+    (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"),
+    (AppiumBy.ACCESSIBILITY_ID, "Scan QR from Gallery"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Scan QR")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Scan QR")'),
+    (AppiumBy.XPATH, '//*[contains(@content-desc, "Scan QR") or contains(@text, "Scan QR")]'),
+]
+
 HOME_LOCATORS = [
     (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
     (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
@@ -663,16 +671,8 @@ def draw_signature(driver):
 def step_open_app(driver):     ensure_app_open(driver); time.sleep(2)
 def step_scan_qr(driver):
     scan_media(driver)
-    scan_locators = [
-        (AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery"),
-        (AppiumBy.ACCESSIBILITY_ID, "Scan QR from Gallery"),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Scan QR")'),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Scan QR")'),
-        (AppiumBy.XPATH, '//*[contains(@content-desc, "Scan QR") or contains(@text, "Scan QR")]'),
-    ]
-
     for _ in range(3):
-        if try_click(driver, scan_locators, timeout=4) or tap_first_locator_center(driver, scan_locators, timeout=2):
+        if try_click(driver, SCAN_QR_LOCATORS, timeout=4) or tap_first_locator_center(driver, SCAN_QR_LOCATORS, timeout=2):
             try:
                 WebDriverWait(driver, 6).until(lambda d: picker_is_open(d))
                 return
@@ -757,6 +757,11 @@ def step_done_picker(driver):
     if picker_is_open(driver) and not picker_has_selected_media(driver):
         raise RuntimeError("QR image is not selected; refusing to press Back or Add")
 
+    if not picker_is_open(driver):
+        WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
+        time.sleep(2)
+        return
+
     tried = False
     confirm = picker_confirm_button(driver, timeout=2)
     if confirm is not None:
@@ -768,19 +773,35 @@ def step_done_picker(driver):
                 tried = True
 
     if not tried:
-        # Pixel 8 - "Add" button is bottom-right area.
-        tap_xy_once(driver, 900, 2300)
+        # Confirm button fallback: bottom-right on Android photo picker.
+        W, H = _screen(driver)
+        tap_xy_once(driver, int(W * 0.84), int(H * 0.96))
+    WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
     time.sleep(2)
+
 def step_return_app(driver):
     WebDriverWait(driver, 18).until(lambda d: d.current_package == APP_PACKAGE)
     if not has_any(driver, LOGIN_LOCATORS + HOME_LOCATORS, timeout=8):
+        if has_any(driver, SCAN_QR_LOCATORS, timeout=1):
+            return
         raise RuntimeError("Returned to app, but neither Login nor Home screen appeared")
+
 def step_tap_login(driver):
     if has_any(driver, HOME_LOCATORS, timeout=2):
         return
-    if not try_click(driver, LOGIN_LOCATORS, timeout=4):
+    for attempt in range(2):
+        if try_click(driver, LOGIN_LOCATORS, timeout=4) or tap_first_locator_center(driver, LOGIN_LOCATORS, timeout=1):
+            time.sleep(4)
+            return
+        if attempt == 0 and has_any(driver, SCAN_QR_LOCATORS, timeout=1):
+            step_scan_qr(driver)
+            step_picker_open(driver)
+            step_tap_photo(driver)
+            step_done_picker(driver)
+            time.sleep(2)
+            continue
         raise RuntimeError("Login button did not appear after QR selection")
-    time.sleep(4)
+
 def step_wait_home(driver):
     if not has_any(driver, HOME_LOCATORS, timeout=12):
         raise RuntimeError("Home screen did not appear after tapping Login")
@@ -1008,8 +1029,6 @@ LOGIN_BOOK_LOGOUT = [
 
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout":      LOGIN_LOGOUT,
-    "login_browse":      LOGIN_BROWSE,
-    "login_book_logout": LOGIN_BOOK_LOGOUT,
 }
 
 

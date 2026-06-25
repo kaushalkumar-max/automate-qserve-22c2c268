@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  listTestCases, listDevices, getQrStatus, runTest, listRuns,
+  listTestCases, listDevices, getQrStatus, getApkStatus, runTest, listRuns,
 } from "@/lib/qserve.functions";
 
 export const Route = createFileRoute("/")({
@@ -25,6 +25,7 @@ function Dashboard() {
   const [devices, setDevices] = useState<{ id: string; name: string; os_version: string }[]>([]);
   const [selectedDevice, setSelectedDevice] = useState("");
   const [apkFile, setApkFile] = useState<File | null>(null);
+  const [apkFilename, setApkFilename] = useState("");
   const [apkUploading, setApkUploading] = useState(false);
   const [apkUrl, setApkUrl] = useState<string | null>(null);
   const [qrUploading, setQrUploading] = useState(false);
@@ -43,17 +44,29 @@ function Dashboard() {
       if (d.filename) setQrFilename(d.filename);
     }).catch(() => {});
 
+  const refreshApk = () =>
+    getApkStatus().then((d) => {
+      if (d.uploaded && d.app_url) {
+        setApkUrl(d.app_url);
+        setApkFilename(d.filename || "Retained BrowserStack build");
+      }
+    }).catch(() => {});
+
   const refreshRuns = () => {
     setRunsLoading(true);
     listRuns().then((r) => setRuns(r as any[])).catch(() => {}).finally(() => setRunsLoading(false));
   };
 
   useEffect(() => {
-    listTestCases().then(setTestCases).catch((e) => toast.error("Failed to load test cases", { description: e.message }));
+    listTestCases().then((cases) => {
+      setTestCases(cases);
+      if (cases.length) setSelectedCase(cases[0].key);
+    }).catch((e) => toast.error("Failed to load test cases", { description: e.message }));
     listDevices().then((d) => {
       setDevices(d);
       if (d.length) setSelectedDevice(d[0].id);
     }).catch(() => {});
+    refreshApk();
     refreshQr();
     refreshRuns();
   }, []);
@@ -65,6 +78,7 @@ function Dashboard() {
       return;
     }
     setApkFile(file);
+    setApkFilename(file.name);
     setApkUrl(null);
     setApkUploading(true);
     try {
@@ -74,6 +88,7 @@ function Dashboard() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
       setApkUrl(j.app_url);
+      setApkFilename(file.name);
       toast.success("APK uploaded to BrowserStack", { description: j.app_url });
     } catch (e: any) {
       toast.error("APK upload failed", { description: e.message });
@@ -110,7 +125,7 @@ function Dashboard() {
         data: {
           app_url: apkUrl,
           test_case: selectedCase,
-          filename: apkFile?.name,
+          filename: apkFile?.name || apkFilename || undefined,
           device_id: selectedDevice || undefined,
         },
       });
@@ -161,10 +176,10 @@ function Dashboard() {
             >
               <Upload className="w-6 h-6 text-[#58a6ff] mb-3" strokeWidth={2} />
               <div className="text-sm text-white font-medium">
-                {apkFile ? apkFile.name : "Drop .apk or click to browse"}
+                {apkFile ? apkFile.name : apkFilename || "Drop .apk or click to browse"}
               </div>
               <div className="text-[11px] text-[#8b949e] font-mono-heading mt-1">
-                {apkUploading ? "Uploading to BrowserStack..." : apkUrl ? apkUrl : "Single .apk file"}
+                {apkUploading ? "Uploading to BrowserStack..." : apkUrl ? "Retained for testing until replaced" : "Single .apk file"}
               </div>
             </button>
             <input
@@ -186,11 +201,8 @@ function Dashboard() {
             </div>
             <div className="flex-1 flex flex-col justify-center">
               <Select value={selectedCase} onValueChange={setSelectedCase}>
-                <SelectTrigger
-                  data-testid="testcase-select-trigger"
-                  className="bg-[#0d1117] border-[#30363d] text-white h-12 font-mono-heading text-sm"
-                >
-                  <SelectValue placeholder="Choose a scenario..." />
+                <SelectTrigger data-testid="testcase-select-trigger" className="bg-[#0d1117] border-[#30363d] text-white h-12 font-mono-heading text-sm">
+                  <SelectValue placeholder="Login → Logout" />
                 </SelectTrigger>
                 <SelectContent
                   data-testid="testcase-select-content"
@@ -210,7 +222,7 @@ function Dashboard() {
                 </SelectContent>
               </Select>
               <div className="text-[11px] text-[#8b949e] font-mono-heading mt-3">
-                Each scenario runs on Samsung Galaxy S23, Android 13.
+                Only the current login-to-logout case is enabled.
               </div>
             </div>
           </div>
@@ -285,7 +297,7 @@ function Dashboard() {
             <div className="text-[11px] text-[#8b949e] mt-2">
               {canRun
                 ? "All systems go. Hit Run Test to dispatch to BrowserStack."
-                : "Upload APK, QR image, pick a test case and device to enable Run."}
+                : "Upload APK and QR image to enable Run."}
             </div>
           </div>
           <button
