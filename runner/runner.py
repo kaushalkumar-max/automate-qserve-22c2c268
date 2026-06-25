@@ -244,6 +244,14 @@ def tap_xy(driver, x, y):
     actions.perform()
 
 
+def tap_absolute(driver, x, y):
+    """Tap exact app-screen coordinates using the same clickGesture path as the proven local script."""
+    try:
+        driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+    except Exception:
+        tap_xy(driver, x, y)
+
+
 def tap_xy_once(driver, x, y):
     """Tap absolute coords, preferring Appium's native click gesture.
 
