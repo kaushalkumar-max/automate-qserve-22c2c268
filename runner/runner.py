@@ -570,28 +570,30 @@ def tap_catalogue_from_source_bounds(driver) -> bool:
 
 
 def tap_catalogue_coordinates(driver) -> bool:
-    """Tap the Catalogue bottom-nav tab using absolute Pixel 8 coords + scaled fallbacks.
+    """Tap the Catalogue bottom-nav tab using screenshot-derived coordinates.
 
-    Pixel 8 physical = 1080x2400. Bottom nav row ~y=2240-2300, 2nd tab (Catalogue) center ~x=216.
-    Try fixed coords from the proven local script first, then percentages for other devices.
+    The attached home screenshot shows five bottom-nav actions. The old x=216
+    Pixel-8 coordinate is the Home tab (about 20% width), not Catalogue.
+    Catalogue is the second visible icon at ~32.5% width and ~93% height.
     """
     W, H = _screen(driver)
     raw_points = [
-        # Proven Pixel 8 absolute coordinates from the local script
-        (216, 2275),
-        (216, 2240),
-        (216, 2300),
-        (260, 2275),
-        (180, 2275),
-        # Scaled fallbacks for other devices / orientations
-        (int(W * 0.20), int(H * 0.95)),
-        (int(W * 0.20), int(H * 0.93)),
-        (int(W * 0.25), int(H * 0.95)),
-        (int(W * 0.30), int(H * 0.95)),
+        # Dynamic coords from the actual screenshot: Catalogue center is the
+        # second bottom-nav icon, about x=108/334 and y=676/728.
+        (int(W * 0.325), int(H * 0.928)),
+        (int(W * 0.325), int(H * 0.950)),
+        (int(W * 0.325), int(H * 0.900)),
+        (int(W * 0.350), int(H * 0.928)),
+        (int(W * 0.300), int(H * 0.928)),
+        # Pixel 8 physical equivalents for 1080x2400 screenshots.
+        (350, 2228),
+        (350, 2280),
+        (350, 2160),
+        (380, 2228),
+        (325, 2228),
     ]
 
     seen: set[tuple[int, int]] = set()
-    tapped_any = False
     for x, y in raw_points:
         point = (max(1, min(int(W - 2), int(x))), max(1, min(int(H - 2), int(y))))
         if point in seen:
@@ -599,13 +601,12 @@ def tap_catalogue_coordinates(driver) -> bool:
         seen.add(point)
         try:
             tap_absolute(driver, point[0], point[1])
-            tapped_any = True
         except Exception:
             continue
         time.sleep(1.5)
         if catalogue_is_open(driver, timeout=2):
             return True
-    return tapped_any
+    return False
 
 
 CATALOGUE_NAV_LOCATORS = [
