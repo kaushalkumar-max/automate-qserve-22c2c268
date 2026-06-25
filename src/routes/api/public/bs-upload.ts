@@ -34,8 +34,8 @@ export const Route = createFileRoute("/api/public/bs-upload")({
         // Streaming request.body through workerd's fetch is unreliable for
         // large multipart uploads and was returning 500s.
         const inForm = await request.formData();
-        const file = inForm.get("file");
-        if (!(file instanceof File) && !(file instanceof Blob)) {
+        const file = inForm.get("file") as unknown;
+        if (!(file instanceof Blob)) {
           return new Response(JSON.stringify({ error: "Missing 'file' field" }), {
             status: 400, headers: { "content-type": "application/json" },
           });
