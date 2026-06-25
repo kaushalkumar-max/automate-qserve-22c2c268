@@ -751,120 +751,159 @@ def step_logout(driver):
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Logout"))).click()
 
+def _screen(driver):
+    s = driver.get_window_size()
+    return s["width"], s["height"]
+
 def step_catalogue(driver):
     if catalogue_is_open(driver, timeout=1):
         return
 
-    # Match the uploaded script first: click nav_catalogue/Catalogue exactly.
-    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=8):
+    # Resource-id / accessibility locators first.
+    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=6):
         if catalogue_is_open(driver, timeout=3):
             return
-
-    # Flutter can expose the element as visible but not clickable; tap its center.
-    if tap_first_locator_center(driver, CATALOGUE_NAV_LOCATORS, timeout=4):
+    if tap_first_locator_center(driver, CATALOGUE_NAV_LOCATORS, timeout=3):
         if catalogue_is_open(driver, timeout=3):
             return
-
-    # Parse XML bounds for the catalogue/bottom-nav node and tap its center.
     if tap_catalogue_from_source_bounds(driver):
         if catalogue_is_open(driver, timeout=3):
             return
 
-    # Coordinate fallback from the user's working script: Catalogue is at the
-    # right-side bottom-nav position (~x=888,y=2219 on 1080x2400). Do not tap Back.
-    s = driver.get_window_size()
+    # Coordinate fallback from uploaded reference script: Catalogue is the
+    # 2nd tab of 4 in the bottom nav (Pixel 8 reference x=360, y=2270).
+    W, H = _screen(driver)
     for x, y in (
-        (888, 2219),
-        (int(s["width"] * (888 / 1080)), int(s["height"] * (2219 / 2400))),
-        (int(s["width"] * 0.82), int(s["height"] * 0.925)),
+        (int(W * (360 / 1080)), int(H * (2270 / 2400))),
+        (360, 2270),
+        (int(W * 0.33), int(H * 0.945)),
     ):
         tap_absolute(driver, x, y)
         if catalogue_is_open(driver, timeout=2):
             return
 
-    raise RuntimeError("Catalogue tab did not open after tapping nav_catalogue")
+    raise RuntimeError("Catalogue tab did not open")
 
 def step_brand_boys(driver):
     if not try_click(driver, [
-        (AppiumBy.XPATH, '//android.view.View[@content-desc="Boys\n281 options"]'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Boys")'),
-    ], timeout=5):
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Boys")'),
+    ], timeout=8):
         raise RuntimeError("Brand 'Boys' not found")
-    time.sleep(2)
+    time.sleep(1.5)
 
 def step_first_product(driver):
-    if not try_click(driver, [
-        (AppiumBy.XPATH, '//android.widget.ImageView[@content-desc="BCO_CRYSTALIS B\n1999"]'),
+    # Content-desc cards first (mirrors uploaded script).
+    if try_click(driver, [
         (AppiumBy.ANDROID_UIAUTOMATOR,
-         'new UiSelector().className("android.widget.ImageView").instance(0)'),
-    ], timeout=5):
-        raise RuntimeError("Product not found")
-    time.sleep(0.8)
+         'new UiSelector().className("android.widget.ImageView").descriptionMatches("(?s).+\\n.+")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().descriptionMatches("(?s).+\\n.+")'),
+    ], timeout=4):
+        time.sleep(1)
+        return
+
+    # Position-based: first clickable card with a content-desc in grid area.
+    candidates = []
+    try:
+        els = driver.find_elements(
+            AppiumBy.XPATH,
+            '//android.widget.ImageView[@clickable="true"] | //android.view.View[@clickable="true"]',
+        )
+    except Exception:
+        els = []
+    for el in els:
+        try:
+            loc = el.location
+            desc = el.get_attribute("content-desc") or ""
+            if 350 < loc["y"] < 1900 and desc.strip():
+                candidates.append((loc["y"], loc["x"], el))
+        except Exception:
+            continue
+    candidates.sort(key=lambda t: (t[0], t[1]))
+    if candidates:
+        try:
+            candidates[0][2].click()
+            time.sleep(1)
+            return
+        except Exception:
+            pass
+
+    if try_click(driver, [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView").clickable(true).instance(0)'),
+    ], timeout=3):
+        time.sleep(1)
+        return
+    raise RuntimeError("First product card not found")
 
 def step_fill_sizes(driver):
     inputs = WebDriverWait(driver, 15).until(
         EC.presence_of_all_elements_located((AppiumBy.CLASS_NAME, "android.widget.EditText")))
     entered = 0
-    for i, inp in enumerate(inputs):
+    for inp in inputs:
         try:
             inp.click(); inp.clear()
-            inp.set_value(SIZE_VALUES[i] if i < len(SIZE_VALUES) else "1")
-            entered += 1; time.sleep(0.1)
+            try:
+                inp.set_value("1")
+            except Exception:
+                inp.send_keys("1")
+            entered += 1; time.sleep(0.15)
         except Exception:
-            pass
+            continue
     if entered == 0:
         raise RuntimeError("No size EditText fields found")
-    try_click(driver, [
-        (AppiumBy.XPATH, '//*[@content-desc="Dismiss"]'),
+    time.sleep(0.3)
+    W, H = _screen(driver)
+    if not try_click(driver, [
         (AppiumBy.ACCESSIBILITY_ID, "Dismiss"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Dismiss")'),
-        (AppiumBy.XPATH, '//android.view.View[@content-desc="Dismiss"]'),
-    ], timeout=2) or tap_absolute(driver, 248, 2360)
-    time.sleep(0.3)
+    ], timeout=1.5):
+        tap_absolute(driver, int(W * 0.23), int(H * 0.985))
+    time.sleep(0.5)
 
 def step_plus(driver):
+    W, H = _screen(driver)
     if not try_click(driver, [
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").text("+")'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(1)'),
-        (AppiumBy.XPATH, '(//android.view.View[@content-desc="0"])[1]/android.widget.Button[2]'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(0)'),
     ]):
-        tap_absolute(driver, 887, 1919)
-    time.sleep(0.5)
+        tap_absolute(driver, int(W * 0.82), int(H * 0.80))
+    time.sleep(0.6)
 
 def step_add_to_cart(driver):
+    W, H = _screen(driver)
     if not try_click(driver, [
-        (AppiumBy.XPATH, '//android.widget.ImageView[@content-desc="Add to cart"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Add to cart"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Add to cart")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Add to Cart")'),
     ], timeout=5):
-        tap_absolute(driver, 679, 2360)
-    time.sleep(0.8)
+        tap_absolute(driver, int(W * 0.63), int(H * 0.985))
+    time.sleep(1)
 
 def step_home(driver):
+    W, H = _screen(driver)
     if not try_click(driver, [
-        (AppiumBy.XPATH,
-         "//android.widget.FrameLayout[@resource-id='android:id/content']"
-         "/android.widget.FrameLayout/android.view.View/android.view.View"
-         "/android.view.View/android.view.View/android.widget.Button"),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(1)'),
-        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(0)'),
         (AppiumBy.ACCESSIBILITY_ID, "Home"),
         (AppiumBy.ACCESSIBILITY_ID, "Home Tab"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Home")'),
     ]):
-        tap_absolute(driver, 150, 2219)
-    time.sleep(0.8)
+        tap_absolute(driver, int(W * 0.5), int(H * 0.928))
+    time.sleep(1)
 
 def step_cart_tab(driver):
+    W, H = _screen(driver)
     if not try_click(driver, [
         (AppiumBy.ID, "nav_cart"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("nav_cart")'),
-        (AppiumBy.XPATH, '//android.widget.ImageView[@resource-id="nav_cart"]'),
         (AppiumBy.ACCESSIBILITY_ID, "Cart"),
         (AppiumBy.ACCESSIBILITY_ID, "Cart Tab"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Cart")'),
-    ]):
-        tap_absolute(driver, 935, 2219)
-    time.sleep(0.8)
+    ], timeout=3):
+        # Uploaded script: 3rd tab of 4 at x=720, y=2270 on Pixel 8.
+        tap_absolute(driver, int(W * (720 / 1080)), int(H * (2270 / 2400)))
+    time.sleep(1)
 
 def step_save(driver):
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable(
