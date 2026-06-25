@@ -744,6 +744,9 @@ def step_tap_login(driver):
 def step_wait_home(driver):
     if not has_any(driver, HOME_LOCATORS, timeout=12):
         raise RuntimeError("Home screen did not appear after tapping Login")
+    # Match the proven local script: let the home bottom-nav finish rendering
+    # before starting the post-login booking flow.
+    time.sleep(6)
 def step_logout(driver):
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable(
         (AppiumBy.ACCESSIBILITY_ID, "Logout"))).click()
@@ -767,13 +770,13 @@ def step_catalogue(driver):
         if catalogue_is_open(driver, timeout=3):
             return
 
-    # Coordinate fallback for the attached Pixel 8 home screenshot: book icon is
-    # the second bottom-nav item (~x=335,y=2219 on 1080x2400). Do not tap Back.
+    # Coordinate fallback from the user's working script: Catalogue is at the
+    # right-side bottom-nav position (~x=888,y=2219 on 1080x2400). Do not tap Back.
     s = driver.get_window_size()
     for x, y in (
-        (335, 2219),
-        (int(s["width"] * 0.31), int(s["height"] * 0.925)),
-        (int(s["width"] * 0.31), int(s["height"] * 0.895)),
+        (888, 2219),
+        (int(s["width"] * (888 / 1080)), int(s["height"] * (2219 / 2400))),
+        (int(s["width"] * 0.82), int(s["height"] * 0.925)),
     ):
         tap_absolute(driver, x, y)
         if catalogue_is_open(driver, timeout=2):
