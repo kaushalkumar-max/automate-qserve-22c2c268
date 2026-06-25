@@ -806,9 +806,32 @@ def step_logout(driver):
     time.sleep(2)
 
 def step_catalogue(driver):
-    if not _find_and_click(driver, "Catalogue", timeout=15):
-        raise RuntimeError("Could not find 'Catalogue' tab")
-    time.sleep(2)
+    # 1. Semantic label (Flutter accessibility / text)
+    if _find_and_click(driver, "Catalogue", timeout=8):
+        time.sleep(1.5)
+        if catalogue_is_open(driver, timeout=4):
+            return
+    # 2. Known resource-id / accessibility locators
+    for by, sel in CATALOGUE_NAV_LOCATORS:
+        try:
+            el = WebDriverWait(driver, 2).until(EC.element_to_be_clickable((by, sel)))
+            el.click()
+            time.sleep(1.5)
+            if catalogue_is_open(driver, timeout=3):
+                return
+        except Exception:
+            continue
+    # 3. Parse page_source bounds for any catalogue node
+    if tap_catalogue_from_source_bounds(driver):
+        time.sleep(1.5)
+        if catalogue_is_open(driver, timeout=3):
+            return
+    # 4. Coordinate fallback on the 2nd bottom-nav slot
+    if tap_catalogue_coordinates(driver):
+        time.sleep(1)
+        if catalogue_is_open(driver, timeout=3):
+            return
+    raise RuntimeError("Could not open Catalogue tab (all locators + coords failed)")
 
 def step_brand_boys(driver):
     if _find_and_click(driver, "Boys", timeout=10):
