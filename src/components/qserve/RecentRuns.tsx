@@ -23,6 +23,8 @@ function timeAgo(iso?: string) {
 }
 
 export default function RecentRuns({ runs = [], loading }: { runs?: Run[]; loading?: boolean }) {
+  const visibleRuns = runs.slice(0, 2);
+
   if (loading) {
     return (
       <div data-testid="recent-runs-loading" className="text-xs text-[#8b949e] font-mono-heading">
@@ -30,7 +32,7 @@ export default function RecentRuns({ runs = [], loading }: { runs?: Run[]; loadi
       </div>
     );
   }
-  if (!runs.length) {
+  if (!visibleRuns.length) {
     return (
       <div
         data-testid="recent-runs-empty"
@@ -44,7 +46,7 @@ export default function RecentRuns({ runs = [], loading }: { runs?: Run[]; loadi
   }
   return (
     <div data-testid="recent-runs-list" className="space-y-2">
-      {runs.map((r) => {
+      {visibleRuns.map((r) => {
         const isDone = r.status === "completed";
         return (
           <Link

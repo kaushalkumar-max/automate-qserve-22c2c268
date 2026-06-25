@@ -29,7 +29,7 @@ function TestRunning() {
         setStatus(s);
         if (s.message && s.message !== lastMsgRef.current) {
           lastMsgRef.current = s.message;
-          setLogs((prev) => [...prev, { ts: new Date().toLocaleTimeString(), msg: s.message! }]);
+          setLogs((prev) => [...prev, { ts: new Date().toLocaleTimeString(), msg: s.message! }].slice(-2));
         }
         if (s.status === "completed" || s.status === "passed" || s.status === "failed") {
           navigate({ to: "/results/$runId", params: { runId }, replace: true });
@@ -120,7 +120,7 @@ function TestRunning() {
             </div>
             <span className="ml-2">browserstack · session log</span>
           </div>
-          <div ref={logsRef} className="p-4 h-72 overflow-y-auto space-y-1">
+          <div ref={logsRef} className="p-4 h-24 overflow-y-auto space-y-1">
             {logs.length === 0 ? (
               <div className="console-line text-[#484f58]">$ waiting for first event…</div>
             ) : (

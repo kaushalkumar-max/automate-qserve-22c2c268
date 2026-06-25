@@ -57,16 +57,16 @@ export const Route = createFileRoute("/api/public/bs-upload")({
           });
         }
 
-        // For QR media uploads, persist the media_url in our settings table.
-        if (kind === "media") {
+        // Persist the latest uploaded artifact so it can be reused during testing.
+        if (kind === "media" || kind === "apk") {
           try {
-            const parsed = JSON.parse(text) as { media_url?: string };
-            if (parsed.media_url) {
-              const filename = url.searchParams.get("filename") || "qr.png";
+            const parsed = JSON.parse(text) as { media_url?: string; app_url?: string };
+            const artifactUrl = kind === "media" ? parsed.media_url : parsed.app_url;
+            if (artifactUrl) {
               const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
               await supabaseAdmin.from("qserve_settings").upsert({
-                key: "qr_media",
-                media_url: parsed.media_url,
+                key: kind === "media" ? "qr_media" : "apk_build",
+                media_url: artifactUrl,
                 filename,
                 uploaded_at: new Date().toISOString(),
               });
