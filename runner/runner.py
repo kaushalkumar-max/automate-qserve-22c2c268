@@ -569,6 +569,33 @@ def tap_catalogue_from_source_bounds(driver) -> bool:
         return False
 
 
+def tap_catalogue_coordinates(driver) -> bool:
+    """Tap the Catalogue bottom-nav area using the uploaded script's Pixel 8 coordinates plus scaled fallbacks."""
+    W, H = _screen(driver)
+    raw_points = [
+        # Exact uploaded-script point: second tab from left on Pixel 8.
+        (int(W * (360 / 1080)), int(H * (2270 / 2400))),
+        (360, 2270),
+        # Nearby second-tab centers for devices whose window size excludes system bars.
+        (int(W * 0.33), int(H * 0.945)),
+        (int(W * 0.36), int(H * 0.945)),
+        (int(W * 0.375), int(H * 0.945)),
+        (int(W * 0.33), int(H * 0.925)),
+        (int(W * 0.33), int(H * 0.965)),
+    ]
+    seen: set[tuple[int, int]] = set()
+    for x, y in raw_points:
+        point = (max(1, min(int(W - 2), int(x))), max(1, min(int(H - 2), int(y))))
+        if point in seen:
+            continue
+        seen.add(point)
+        tap_absolute(driver, point[0], point[1])
+        time.sleep(1.2)
+        if catalogue_is_open(driver, timeout=2):
+            return True
+    return False
+
+
 CATALOGUE_NAV_LOCATORS = [
     # Proven post-login catalogue locators from qserve_automation_v2.py.
     (AppiumBy.ID, "nav_catalogue"),
@@ -759,36 +786,42 @@ def step_catalogue(driver):
     if catalogue_is_open(driver, timeout=1):
         return
 
-    # Resource-id / accessibility locators first.
-    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=6):
-        if catalogue_is_open(driver, timeout=3):
+    time.sleep(1)
+
+    # Prefer the actual bottom-nav node bounds when the app exposes them.
+    if tap_catalogue_from_source_bounds(driver):
+        if catalogue_is_open(driver, timeout=4):
+            return
+
+    # Then use resource-id / accessibility locators from the uploaded script.
+    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=4):
+        if catalogue_is_open(driver, timeout=4):
             return
     if tap_first_locator_center(driver, CATALOGUE_NAV_LOCATORS, timeout=3):
-        if catalogue_is_open(driver, timeout=3):
-            return
-    if tap_catalogue_from_source_bounds(driver):
-        if catalogue_is_open(driver, timeout=3):
+        if catalogue_is_open(driver, timeout=4):
             return
 
-    # Coordinate fallback from uploaded reference script: Catalogue is the
-    # 2nd tab of 4 in the bottom nav (Pixel 8 reference x=360, y=2270).
-    W, H = _screen(driver)
-    for x, y in (
-        (int(W * (360 / 1080)), int(H * (2270 / 2400))),
-        (360, 2270),
-        (int(W * 0.33), int(H * 0.945)),
-    ):
-        tap_absolute(driver, x, y)
-        if catalogue_is_open(driver, timeout=2):
-            return
+    # Final coordinate fallback: same coordinates as the running reference script,
+    # scaled for BrowserStack devices.
+    if tap_catalogue_coordinates(driver):
+        return
 
-    raise RuntimeError("Catalogue tab did not open")
+    # Match the uploaded script's behavior: do not stop here on a weak page check;
+    # the next step will prove the catalogue by selecting Boys.
+    time.sleep(1)
 
 def step_brand_boys(driver):
-    if not try_click(driver, [
+    boys_locators = [
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Boys")'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Boys")'),
-    ], timeout=8):
+    ]
+    if not try_click(driver, boys_locators, timeout=8):
+        # If the catalogue tap landed late or the first coordinate missed, retry only
+        # the post-home catalogue action and then select Boys again.
+        step_catalogue(driver)
+        if try_click(driver, boys_locators, timeout=8):
+            time.sleep(1.5)
+            return
         raise RuntimeError("Brand 'Boys' not found")
     time.sleep(1.5)
 
