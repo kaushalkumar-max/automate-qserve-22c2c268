@@ -923,7 +923,7 @@ def step_home(driver):
         (AppiumBy.ACCESSIBILITY_ID, "Home Tab"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Home")'),
     ]):
-        tap_absolute(driver, int(W * 0.5), int(H * 0.928))
+        tap_absolute(driver, int(W * 0.10), int(H * 0.95))
     time.sleep(1)
 
 def step_cart_tab(driver):
