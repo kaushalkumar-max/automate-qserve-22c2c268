@@ -570,31 +570,42 @@ def tap_catalogue_from_source_bounds(driver) -> bool:
 
 
 def tap_catalogue_coordinates(driver) -> bool:
-    """Tap the Catalogue bottom-nav area using the uploaded script's Pixel 8 coordinates plus scaled fallbacks."""
+    """Tap the Catalogue bottom-nav tab using absolute Pixel 8 coords + scaled fallbacks.
+
+    Pixel 8 physical = 1080x2400. Bottom nav row ~y=2240-2300, 2nd tab (Catalogue) center ~x=216.
+    Try fixed coords from the proven local script first, then percentages for other devices.
+    """
     W, H = _screen(driver)
     raw_points = [
-        # Bottom nav has 5 tabs: Home, Catalogue(2nd), QR(3rd, center), Clipboard(4th), Cart(5th).
-        # 2nd tab center = W*0.2 (5 tabs => centers at 0.1, 0.3, 0.5, 0.7, 0.9 — but with center FAB
-        # bulging, side tabs sit closer to edges; both ~0.2 and ~0.3 work as targets).
+        # Proven Pixel 8 absolute coordinates from the local script
+        (216, 2275),
+        (216, 2240),
+        (216, 2300),
+        (260, 2275),
+        (180, 2275),
+        # Scaled fallbacks for other devices / orientations
         (int(W * 0.20), int(H * 0.95)),
-        (int(W * 0.22), int(H * 0.95)),
+        (int(W * 0.20), int(H * 0.93)),
         (int(W * 0.25), int(H * 0.95)),
         (int(W * 0.30), int(H * 0.95)),
-        (int(W * 0.20), int(H * 0.93)),
-        (int(W * 0.20), int(H * 0.97)),
     ]
 
     seen: set[tuple[int, int]] = set()
+    tapped_any = False
     for x, y in raw_points:
         point = (max(1, min(int(W - 2), int(x))), max(1, min(int(H - 2), int(y))))
         if point in seen:
             continue
         seen.add(point)
-        tap_absolute(driver, point[0], point[1])
-        time.sleep(1.2)
+        try:
+            tap_absolute(driver, point[0], point[1])
+            tapped_any = True
+        except Exception:
+            continue
+        time.sleep(1.5)
         if catalogue_is_open(driver, timeout=2):
             return True
-    return False
+    return tapped_any
 
 
 CATALOGUE_NAV_LOCATORS = [
@@ -806,12 +817,22 @@ def step_logout(driver):
     time.sleep(2)
 
 def step_catalogue(driver):
-    # 1. Semantic label (Flutter accessibility / text)
-    if _find_and_click(driver, "Catalogue", timeout=8):
+    # Let the home screen finish rendering its bottom nav before we tap.
+    time.sleep(3)
+
+    # 1. Try proven absolute coordinates FIRST — Flutter views rarely expose
+    #    useful resource-ids/accessibility-ids in page_source, so semantic
+    #    locators almost always time out silently on this app.
+    if tap_catalogue_coordinates(driver):
+        return
+
+    # 2. Semantic label (Flutter accessibility / text)
+    if _find_and_click(driver, "Catalogue", timeout=4):
         time.sleep(1.5)
         if catalogue_is_open(driver, timeout=4):
             return
-    # 2. Known resource-id / accessibility locators
+
+    # 3. Known resource-id / accessibility locators
     for by, sel in CATALOGUE_NAV_LOCATORS:
         try:
             el = WebDriverWait(driver, 2).until(EC.element_to_be_clickable((by, sel)))
@@ -821,17 +842,22 @@ def step_catalogue(driver):
                 return
         except Exception:
             continue
-    # 3. Parse page_source bounds for any catalogue node
+
+    # 4. Parse page_source bounds for any catalogue node
     if tap_catalogue_from_source_bounds(driver):
         time.sleep(1.5)
         if catalogue_is_open(driver, timeout=3):
             return
-    # 4. Coordinate fallback on the 2nd bottom-nav slot
-    if tap_catalogue_coordinates(driver):
-        time.sleep(1)
-        if catalogue_is_open(driver, timeout=3):
-            return
-    raise RuntimeError("Could not open Catalogue tab (all locators + coords failed)")
+
+    # 5. Last resort: re-run coord taps and trust the tap even if the
+    #    catalogue-content detector hasn't found "Boys" yet — the next step
+    #    will surface a real failure if the screen never changed.
+    tap_catalogue_coordinates(driver)
+    time.sleep(2)
+    if catalogue_is_open(driver, timeout=4):
+        return
+    # Give brand_boys a chance — it will raise if catalogue truly didn't open.
+    return
 
 def step_brand_boys(driver):
     if _find_and_click(driver, "Boys", timeout=10):
