@@ -16,10 +16,17 @@ function Results() {
   const { runId } = Route.useParams();
   const navigate = useNavigate();
   const [run, setRun] = useState<any>(null);
+  const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    getResults({ data: { run_id: runId } }).then(setRun).catch((e) => setErr(e.message));
+    getResults({ data: { run_id: runId } })
+      .then((result) => {
+        setRun(result);
+        if (!result) setErr("Run not found");
+      })
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoaded(true));
   }, [runId]);
 
   if (err)
@@ -35,7 +42,7 @@ function Results() {
       </div>
     );
 
-  if (!run)
+  if (!loaded)
     return (
       <div className="min-h-screen bg-[#0d1117] text-white">
         <AppHeader />
