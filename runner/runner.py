@@ -44,10 +44,12 @@ POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
-# Galaxy S23 photo picker fallback: first thumbnail in the Recent grid.
+# Android photo picker fallback: first thumbnail in the Recent grid.
 # Normal flow uses element bounds; these are only used if Android exposes no
-# usable thumbnail nodes.
-PHOTO_X_PCT, PHOTO_Y_PCT = 180 / 1080, 920 / 2340
+# usable thumbnail nodes. On Pixel 8 screenshots the first QR tile center is
+# ~x=190,y=850; the previous y=580 landed above the thumbnail row.
+PHOTO_X_PCT, PHOTO_Y_PCT = 190 / 1080, 850 / 2400
+PIXEL8_QR_TAP_X, PIXEL8_QR_TAP_Y = 190, 850
 QR_IMAGE_TAP_X_PCT, QR_IMAGE_TAP_Y_PCT = 0.50, 0.50
 SIZE_VALUES = ["1"] * 7
 
@@ -242,6 +244,19 @@ def tap_xy(driver, x, y):
     actions.perform()
 
 
+def tap_xy_once(driver, x, y):
+    """Tap absolute coords, preferring Appium's native click gesture.
+
+    Some Android 14 photo picker surfaces ignore W3C pointer taps on grid
+    cells. Do not send both gestures, because a double tap can select then
+    immediately deselect the thumbnail.
+    """
+    try:
+        driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+    except Exception:
+        tap_xy(driver, x, y)
+
+
 def tap_element_center(driver, el) -> bool:
     try:
         loc, size = el.location, el.size
@@ -356,6 +371,54 @@ def tap_visible_qr_thumbnail(driver) -> bool:
     # column 1 / row 1 of Recent images, not the dead center of the screen.
     tap_pct(driver, PHOTO_X_PCT, PHOTO_Y_PCT)
     return True
+
+
+def picker_confirm_button(driver, timeout=1):
+    """Return the visible Add/Done/Open/Select button after a media item is selected."""
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceId("com.google.android.providers.media.module:id/button_add")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceIdMatches(".*:id/(button_add|button_done|done|confirm|action_button)")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().textMatches("(?i)done|add|open|select")'),
+        (AppiumBy.ACCESSIBILITY_ID, "Done"),
+        (AppiumBy.ACCESSIBILITY_ID, "Add"),
+        (AppiumBy.ACCESSIBILITY_ID, "Open"),
+        (AppiumBy.ACCESSIBILITY_ID, "Select"),
+    ]
+    return wait_for_any(driver, locators, timeout=timeout)
+
+
+def picker_has_selected_media(driver) -> bool:
+    """Best-effort check that a thumbnail tap actually selected media."""
+    if not picker_is_open(driver):
+        return True
+
+    btn = picker_confirm_button(driver, timeout=0.8)
+    if btn is not None:
+        try:
+            return btn.is_enabled()
+        except Exception:
+            return True
+
+    try:
+        source = driver.page_source.lower()
+        return any(marker in source for marker in (
+            'checked="true"',
+            'selected="true"',
+            'content-desc="selected',
+            'selected media',
+            'button_add',
+        ))
+    except Exception:
+        return False
+
+
+def tap_and_confirm_qr_thumbnail(driver, x: int, y: int, wait_seconds=1.2) -> bool:
+    tap_xy_once(driver, x, y)
+    time.sleep(wait_seconds)
+    return picker_has_selected_media(driver)
 
 
 PICKER_PACKAGE_MARKERS = (
@@ -588,11 +651,7 @@ def step_tap_photo(driver):
             raise RuntimeError("QR thumbnail not found in picker")
         try:
             WebDriverWait(driver, 5).until(
-                lambda d: (not is_picker_package(d)) or has_any(d, [
-                    (AppiumBy.XPATH, "//*[@text='Done']"),
-                    (AppiumBy.ACCESSIBILITY_ID, "Done"),
-                    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)done|open|select")'),
-                ], timeout=0.5)
+                lambda d: (not is_picker_package(d)) or picker_has_selected_media(d)
             )
         except Exception as e:
             raise RuntimeError("QR image was not selected; picker stayed open after tapping thumbnail") from e
@@ -600,12 +659,19 @@ def step_tap_photo(driver):
         return
 
     # Pixel 8 / Android 14 Photo Picker: the first QR thumbnail is top-left.
-    # Appium often exposes decorative ImageViews first, so tap the known cell
-    # before trying selectors.
+    # Appium often exposes decorative ImageViews first. From the provided
+    # screenshot, the QR tile occupies roughly x=0..365,y=730..1100 on a
+    # 1080x2400 Pixel 8, so tap near its center and verify selection.
     if "providers.media.module" in pkg or (size.get("width") == 1080 and size.get("height", 0) >= 2300):
-        tap_xy(driver, 180, 580)
-        time.sleep(1)
-        return
+        for x, y in (
+            (PIXEL8_QR_TAP_X, PIXEL8_QR_TAP_Y),
+            (int(size["width"] * PHOTO_X_PCT), int(size["height"] * PHOTO_Y_PCT)),
+            (180, 900),
+            (240, 830),
+        ):
+            if tap_and_confirm_qr_thumbnail(driver, x, y):
+                return
+        raise RuntimeError("QR image was not selected; refusing to press Back from the photo picker")
 
     # Try system photo picker resource IDs for Android 14 (Pixel 8).
     selectors = [
@@ -621,49 +687,43 @@ def step_tap_photo(driver):
             el = driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel)
             el.click()
             time.sleep(1)
-            return
+            if picker_has_selected_media(driver):
+                return
         except Exception:
             continue
 
     # Fallback: dynamic bounds-based first thumbnail scan.
     if tap_first_picker_thumbnail(driver, timeout=4):
         time.sleep(1)
-        return
+        if picker_has_selected_media(driver):
+            return
 
-    # Pixel 8 exact coordinate fallback (1080x2400, viewport top=132).
-    tap_xy(driver, 180, 580)
-    time.sleep(1)
+    # Final exact coordinate fallback from the visible first QR tile.
+    if tap_and_confirm_qr_thumbnail(driver, PIXEL8_QR_TAP_X, PIXEL8_QR_TAP_Y):
+        return
+    raise RuntimeError("QR image was not selected; refusing to press Back from the photo picker")
 
 
 def step_done_picker(driver):
+    if picker_is_open(driver) and not picker_has_selected_media(driver):
+        raise RuntimeError("QR image is not selected; refusing to press Back or Add")
+
     tried = False
-    for finder in [
-        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().text("Done")'),
-        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().text("Add")'),
-        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Done"),
-        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Add"),
-        # Android 14 uses a checkmark FAB button.
-        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().resourceId("com.google.android.providers.media.module:id/button_add")'),
-    ]:
+    confirm = picker_confirm_button(driver, timeout=2)
+    if confirm is not None:
         try:
-            finder(driver).click()
+            confirm.click()
             tried = True
-            break
         except Exception:
-            continue
+            if tap_element_center(driver, confirm):
+                tried = True
+
     if not tried:
         # Pixel 8 - "Add" button is bottom-right area.
-        tap_xy(driver, 900, 2300)
+        tap_xy_once(driver, 900, 2300)
     time.sleep(2)
 def step_return_app(driver):
-    try:
-        WebDriverWait(driver, 15).until(lambda d: d.current_package == APP_PACKAGE)
-    except Exception:
-        driver.back()
-        WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
+    WebDriverWait(driver, 18).until(lambda d: d.current_package == APP_PACKAGE)
     if not has_any(driver, LOGIN_LOCATORS + HOME_LOCATORS, timeout=8):
         raise RuntimeError("Returned to app, but neither Login nor Home screen appeared")
 def step_tap_login(driver):
