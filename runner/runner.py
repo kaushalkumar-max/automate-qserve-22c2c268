@@ -651,11 +651,7 @@ def step_tap_photo(driver):
             raise RuntimeError("QR thumbnail not found in picker")
         try:
             WebDriverWait(driver, 5).until(
-                lambda d: (not is_picker_package(d)) or has_any(d, [
-                    (AppiumBy.XPATH, "//*[@text='Done']"),
-                    (AppiumBy.ACCESSIBILITY_ID, "Done"),
-                    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textMatches("(?i)done|open|select")'),
-                ], timeout=0.5)
+                lambda d: (not is_picker_package(d)) or picker_has_selected_media(d)
             )
         except Exception as e:
             raise RuntimeError("QR image was not selected; picker stayed open after tapping thumbnail") from e
@@ -663,12 +659,19 @@ def step_tap_photo(driver):
         return
 
     # Pixel 8 / Android 14 Photo Picker: the first QR thumbnail is top-left.
-    # Appium often exposes decorative ImageViews first, so tap the known cell
-    # before trying selectors.
+    # Appium often exposes decorative ImageViews first. From the provided
+    # screenshot, the QR tile occupies roughly x=0..365,y=730..1100 on a
+    # 1080x2400 Pixel 8, so tap near its center and verify selection.
     if "providers.media.module" in pkg or (size.get("width") == 1080 and size.get("height", 0) >= 2300):
-        tap_xy(driver, 180, 580)
-        time.sleep(1)
-        return
+        for x, y in (
+            (PIXEL8_QR_TAP_X, PIXEL8_QR_TAP_Y),
+            (int(size["width"] * PHOTO_X_PCT), int(size["height"] * PHOTO_Y_PCT)),
+            (180, 900),
+            (240, 830),
+        ):
+            if tap_and_confirm_qr_thumbnail(driver, x, y):
+                return
+        raise RuntimeError("QR image was not selected; refusing to press Back from the photo picker")
 
     # Try system photo picker resource IDs for Android 14 (Pixel 8).
     selectors = [
@@ -684,49 +687,43 @@ def step_tap_photo(driver):
             el = driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, sel)
             el.click()
             time.sleep(1)
-            return
+            if picker_has_selected_media(driver):
+                return
         except Exception:
             continue
 
     # Fallback: dynamic bounds-based first thumbnail scan.
     if tap_first_picker_thumbnail(driver, timeout=4):
         time.sleep(1)
-        return
+        if picker_has_selected_media(driver):
+            return
 
-    # Pixel 8 exact coordinate fallback (1080x2400, viewport top=132).
-    tap_xy(driver, 180, 580)
-    time.sleep(1)
+    # Final exact coordinate fallback from the visible first QR tile.
+    if tap_and_confirm_qr_thumbnail(driver, PIXEL8_QR_TAP_X, PIXEL8_QR_TAP_Y):
+        return
+    raise RuntimeError("QR image was not selected; refusing to press Back from the photo picker")
 
 
 def step_done_picker(driver):
+    if picker_is_open(driver) and not picker_has_selected_media(driver):
+        raise RuntimeError("QR image is not selected; refusing to press Back or Add")
+
     tried = False
-    for finder in [
-        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().text("Done")'),
-        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().text("Add")'),
-        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Done"),
-        lambda d: d.find_element(AppiumBy.ACCESSIBILITY_ID, "Add"),
-        # Android 14 uses a checkmark FAB button.
-        lambda d: d.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().resourceId("com.google.android.providers.media.module:id/button_add")'),
-    ]:
+    confirm = picker_confirm_button(driver, timeout=2)
+    if confirm is not None:
         try:
-            finder(driver).click()
+            confirm.click()
             tried = True
-            break
         except Exception:
-            continue
+            if tap_element_center(driver, confirm):
+                tried = True
+
     if not tried:
         # Pixel 8 - "Add" button is bottom-right area.
-        tap_xy(driver, 900, 2300)
+        tap_xy_once(driver, 900, 2300)
     time.sleep(2)
 def step_return_app(driver):
-    try:
-        WebDriverWait(driver, 15).until(lambda d: d.current_package == APP_PACKAGE)
-    except Exception:
-        driver.back()
-        WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
+    WebDriverWait(driver, 18).until(lambda d: d.current_package == APP_PACKAGE)
     if not has_any(driver, LOGIN_LOCATORS + HOME_LOCATORS, timeout=8):
         raise RuntimeError("Returned to app, but neither Login nor Home screen appeared")
 def step_tap_login(driver):
