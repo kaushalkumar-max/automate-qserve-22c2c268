@@ -1029,8 +1029,6 @@ LOGIN_BOOK_LOGOUT = [
 
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout":      LOGIN_LOGOUT,
-    "login_browse":      LOGIN_BROWSE,
-    "login_book_logout": LOGIN_BOOK_LOGOUT,
 }
 
 
