@@ -30,13 +30,24 @@ export const Route = createFileRoute("/api/public/bs-upload")({
           ? "https://api-cloud.browserstack.com/app-automate/upload-media"
           : "https://api-cloud.browserstack.com/app-automate/upload";
 
-        // Stream the request body straight through — no buffering in the Worker.
+        // Re-parse incoming multipart and forward as a fresh FormData.
+        // Streaming request.body through workerd's fetch is unreliable for
+        // large multipart uploads and was returning 500s.
+        const inForm = await request.formData();
+        const file = inForm.get("file") as unknown;
+        if (!(file instanceof Blob)) {
+          return new Response(JSON.stringify({ error: "Missing 'file' field" }), {
+            status: 400, headers: { "content-type": "application/json" },
+          });
+        }
+        const outForm = new FormData();
+        const filename = (file as File).name || url.searchParams.get("filename") || (kind === "media" ? "qr.png" : "app.apk");
+        outForm.append("file", file as Blob, filename);
+
         const bsRes = await fetch(target, {
           method: "POST",
-          headers: { Authorization: auth, "content-type": contentType },
-          body: request.body,
-          // @ts-expect-error — required by undici/workerd for streaming bodies
-          duplex: "half",
+          headers: { Authorization: auth },
+          body: outForm,
         });
 
         const text = await bsRes.text();
