@@ -244,6 +244,14 @@ def tap_xy(driver, x, y):
     actions.perform()
 
 
+def tap_absolute(driver, x, y):
+    """Tap exact app-screen coordinates using the same clickGesture path as the proven local script."""
+    try:
+        driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+    except Exception:
+        tap_xy(driver, x, y)
+
+
 def tap_xy_once(driver, x, y):
     """Tap absolute coords, preferring Appium's native click gesture.
 
@@ -562,23 +570,24 @@ def tap_catalogue_from_source_bounds(driver) -> bool:
 
 
 CATALOGUE_NAV_LOCATORS = [
-    (AppiumBy.ID, "com.qart.qserve:id/nav_catalogue"),
+    # Proven post-login catalogue locators from qserve_automation_v2.py.
     (AppiumBy.ID, "nav_catalogue"),
-    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("com.qart.qserve:id/nav_catalogue")'),
     (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("nav_catalogue")'),
-    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceIdMatches(".*(:id/)?nav_catalogue$")'),
-    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Catalogue")'),
-    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Catalogue Tab")'),
-    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
-    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("catalog")'),
-    (AppiumBy.XPATH, '//*[@resource-id="com.qart.qserve:id/nav_catalogue" or @resource-id="nav_catalogue"]'),
-    (AppiumBy.XPATH, '//*[contains(@resource-id, "nav_catalogue")]'),
+    (AppiumBy.XPATH, '//android.widget.ImageView[@resource-id="nav_catalogue"]'),
     (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
     (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("catalog")'),
+    (AppiumBy.ID, "com.qart.qserve:id/nav_catalogue"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("com.qart.qserve:id/nav_catalogue")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceIdMatches(".*(:id/)?nav_catalogue$")'),
+    (AppiumBy.XPATH, '//*[@resource-id="com.qart.qserve:id/nav_catalogue" or @resource-id="nav_catalogue"]'),
+    (AppiumBy.XPATH, '//*[contains(@resource-id, "nav_catalogue")]'),
 ]
 
 
 CATALOGUE_OPEN_LOCATORS = [
+    (AppiumBy.XPATH, '//android.view.View[@content-desc="Boys\n281 options"]'),
     (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Boys")'),
     (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Boys")'),
     (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Brand")'),
@@ -743,26 +752,30 @@ def step_catalogue(driver):
     if catalogue_is_open(driver, timeout=1):
         return
 
-    # 1) Tap the actual nav_catalogue/Catalogue element center. This works even
-    # when UiAutomator exposes the node as displayed but not "clickable".
-    if tap_first_locator_center(driver, CATALOGUE_NAV_LOCATORS, timeout=5):
+    # Match the uploaded script first: click nav_catalogue/Catalogue exactly.
+    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=8):
         if catalogue_is_open(driver, timeout=3):
             return
 
-    # 2) Try normal click semantics as a secondary path.
-    if try_click(driver, CATALOGUE_NAV_LOCATORS, timeout=2):
+    # Flutter can expose the element as visible but not clickable; tap its center.
+    if tap_first_locator_center(driver, CATALOGUE_NAV_LOCATORS, timeout=4):
         if catalogue_is_open(driver, timeout=3):
             return
 
-    # 3) Parse XML bounds for the catalogue/bottom-nav node and tap its center.
+    # Parse XML bounds for the catalogue/bottom-nav node and tap its center.
     if tap_catalogue_from_source_bounds(driver):
         if catalogue_is_open(driver, timeout=3):
             return
 
-    # 4) Coordinate fallback: 2nd bottom-nav slot, kept above Android gesture bar.
+    # Coordinate fallback for the attached Pixel 8 home screenshot: book icon is
+    # the second bottom-nav item (~x=335,y=2219 on 1080x2400). Do not tap Back.
     s = driver.get_window_size()
-    for x_pct, y_pct in ((0.30, 0.91), (0.30, 0.94), (0.25, 0.91), (0.35, 0.91)):
-        tap_xy(driver, int(s["width"] * x_pct), int(s["height"] * y_pct))
+    for x, y in (
+        (335, 2219),
+        (int(s["width"] * 0.31), int(s["height"] * 0.925)),
+        (int(s["width"] * 0.31), int(s["height"] * 0.895)),
+    ):
+        tap_absolute(driver, x, y)
         if catalogue_is_open(driver, timeout=2):
             return
 
@@ -770,10 +783,11 @@ def step_catalogue(driver):
 
 def step_brand_boys(driver):
     if not try_click(driver, [
+        (AppiumBy.XPATH, '//android.view.View[@content-desc="Boys\n281 options"]'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Boys")'),
-        (AppiumBy.XPATH, '//*[@content-desc[contains(., "Boys")]]'),
     ], timeout=5):
         raise RuntimeError("Brand 'Boys' not found")
+    time.sleep(2)
 
 def step_first_product(driver):
     if not try_click(driver, [
@@ -797,15 +811,22 @@ def step_fill_sizes(driver):
             pass
     if entered == 0:
         raise RuntimeError("No size EditText fields found")
-    try_click(driver, [(AppiumBy.ACCESSIBILITY_ID, "Dismiss")], timeout=2) or tap_xy(driver, 248, 2360)
+    try_click(driver, [
+        (AppiumBy.XPATH, '//*[@content-desc="Dismiss"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Dismiss"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Dismiss")'),
+        (AppiumBy.XPATH, '//android.view.View[@content-desc="Dismiss"]'),
+    ], timeout=2) or tap_absolute(driver, 248, 2360)
     time.sleep(0.3)
 
 def step_plus(driver):
     if not try_click(driver, [
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").text("+")'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.XPATH, '(//android.view.View[@content-desc="0"])[1]/android.widget.Button[2]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(0)'),
     ]):
-        tap_xy(driver, 887, 1919)
+        tap_absolute(driver, 887, 1919)
     time.sleep(0.5)
 
 def step_add_to_cart(driver):
@@ -813,24 +834,33 @@ def step_add_to_cart(driver):
         (AppiumBy.XPATH, '//android.widget.ImageView[@content-desc="Add to cart"]'),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Add to cart")'),
     ], timeout=5):
-        tap_xy(driver, 679, 2360)
+        tap_absolute(driver, 679, 2360)
     time.sleep(0.8)
 
 def step_home(driver):
     if not try_click(driver, [
+        (AppiumBy.XPATH,
+         "//android.widget.FrameLayout[@resource-id='android:id/content']"
+         "/android.widget.FrameLayout/android.view.View/android.view.View"
+         "/android.view.View/android.view.View/android.widget.Button"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.Button").instance(0)'),
         (AppiumBy.ACCESSIBILITY_ID, "Home"),
         (AppiumBy.ACCESSIBILITY_ID, "Home Tab"),
     ]):
-        tap_xy(driver, 540, 2221)
+        tap_absolute(driver, 150, 2219)
     time.sleep(0.8)
 
 def step_cart_tab(driver):
     if not try_click(driver, [
+        (AppiumBy.ID, "nav_cart"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().resourceId("nav_cart")'),
+        (AppiumBy.XPATH, '//android.widget.ImageView[@resource-id="nav_cart"]'),
         (AppiumBy.ACCESSIBILITY_ID, "Cart"),
         (AppiumBy.ACCESSIBILITY_ID, "Cart Tab"),
         (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Cart")'),
     ]):
-        tap_xy(driver, 935, 2219)
+        tap_absolute(driver, 935, 2219)
     time.sleep(0.8)
 
 def step_save(driver):
