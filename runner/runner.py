@@ -570,31 +570,42 @@ def tap_catalogue_from_source_bounds(driver) -> bool:
 
 
 def tap_catalogue_coordinates(driver) -> bool:
-    """Tap the Catalogue bottom-nav area using the uploaded script's Pixel 8 coordinates plus scaled fallbacks."""
+    """Tap the Catalogue bottom-nav tab using absolute Pixel 8 coords + scaled fallbacks.
+
+    Pixel 8 physical = 1080x2400. Bottom nav row ~y=2240-2300, 2nd tab (Catalogue) center ~x=216.
+    Try fixed coords from the proven local script first, then percentages for other devices.
+    """
     W, H = _screen(driver)
     raw_points = [
-        # Bottom nav has 5 tabs: Home, Catalogue(2nd), QR(3rd, center), Clipboard(4th), Cart(5th).
-        # 2nd tab center = W*0.2 (5 tabs => centers at 0.1, 0.3, 0.5, 0.7, 0.9 — but with center FAB
-        # bulging, side tabs sit closer to edges; both ~0.2 and ~0.3 work as targets).
+        # Proven Pixel 8 absolute coordinates from the local script
+        (216, 2275),
+        (216, 2240),
+        (216, 2300),
+        (260, 2275),
+        (180, 2275),
+        # Scaled fallbacks for other devices / orientations
         (int(W * 0.20), int(H * 0.95)),
-        (int(W * 0.22), int(H * 0.95)),
+        (int(W * 0.20), int(H * 0.93)),
         (int(W * 0.25), int(H * 0.95)),
         (int(W * 0.30), int(H * 0.95)),
-        (int(W * 0.20), int(H * 0.93)),
-        (int(W * 0.20), int(H * 0.97)),
     ]
 
     seen: set[tuple[int, int]] = set()
+    tapped_any = False
     for x, y in raw_points:
         point = (max(1, min(int(W - 2), int(x))), max(1, min(int(H - 2), int(y))))
         if point in seen:
             continue
         seen.add(point)
-        tap_absolute(driver, point[0], point[1])
-        time.sleep(1.2)
+        try:
+            tap_absolute(driver, point[0], point[1])
+            tapped_any = True
+        except Exception:
+            continue
+        time.sleep(1.5)
         if catalogue_is_open(driver, timeout=2):
             return True
-    return False
+    return tapped_any
 
 
 CATALOGUE_NAV_LOCATORS = [
