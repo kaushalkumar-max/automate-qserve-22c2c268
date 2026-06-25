@@ -573,16 +573,17 @@ def tap_catalogue_coordinates(driver) -> bool:
     """Tap the Catalogue bottom-nav area using the uploaded script's Pixel 8 coordinates plus scaled fallbacks."""
     W, H = _screen(driver)
     raw_points = [
-        # Exact uploaded-script point: second tab from left on Pixel 8.
-        (int(W * (360 / 1080)), int(H * (2270 / 2400))),
-        (360, 2270),
-        # Nearby second-tab centers for devices whose window size excludes system bars.
-        (int(W * 0.33), int(H * 0.945)),
-        (int(W * 0.36), int(H * 0.945)),
-        (int(W * 0.375), int(H * 0.945)),
-        (int(W * 0.33), int(H * 0.925)),
-        (int(W * 0.33), int(H * 0.965)),
+        # Bottom nav has 5 tabs: Home, Catalogue(2nd), QR(3rd, center), Clipboard(4th), Cart(5th).
+        # 2nd tab center = W*0.2 (5 tabs => centers at 0.1, 0.3, 0.5, 0.7, 0.9 — but with center FAB
+        # bulging, side tabs sit closer to edges; both ~0.2 and ~0.3 work as targets).
+        (int(W * 0.20), int(H * 0.95)),
+        (int(W * 0.22), int(H * 0.95)),
+        (int(W * 0.25), int(H * 0.95)),
+        (int(W * 0.30), int(H * 0.95)),
+        (int(W * 0.20), int(H * 0.93)),
+        (int(W * 0.20), int(H * 0.97)),
     ]
+
     seen: set[tuple[int, int]] = set()
     for x, y in raw_points:
         point = (max(1, min(int(W - 2), int(x))), max(1, min(int(H - 2), int(y))))
