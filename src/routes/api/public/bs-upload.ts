@@ -42,7 +42,7 @@ export const Route = createFileRoute("/api/public/bs-upload")({
         }
         const outForm = new FormData();
         const filename = (file as File).name || url.searchParams.get("filename") || (kind === "media" ? "qr.png" : "app.apk");
-        outForm.append("file", file, filename);
+        outForm.append("file", file as Blob, filename);
 
         const bsRes = await fetch(target, {
           method: "POST",
