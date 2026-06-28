@@ -27,6 +27,23 @@ export const Route = createFileRoute("/api/public/runner-next")({
         if (!(await isRunnerAuthorized(request))) return json({ error: "Unauthorized" }, 401);
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+        // Reap stale runs: any 'running'/'starting' row whose runner has gone
+        // silent for >90s (Render free tier restarts, crashes, network drops).
+        // Without this they'd stay 'running' forever because nothing else
+        // updates them.
+        const cutoff = new Date(Date.now() - 90_000).toISOString();
+        await supabaseAdmin
+          .from("test_runs")
+          .update({
+            status: "failed",
+            passed: false,
+            message: "Runner process stopped responding (no heartbeat for >90s). Run abandoned.",
+            updated_at: new Date().toISOString(),
+          })
+          .in("status", ["running", "starting"])
+          .lt("updated_at", cutoff);
+
         const { data: queued, error: readError } = await supabaseAdmin
           .from("test_runs")
           .select("*")
@@ -37,6 +54,7 @@ export const Route = createFileRoute("/api/public/runner-next")({
 
         if (readError) return json({ error: readError.message }, 500);
         if (!queued) return json({ job: null });
+
 
         const { data: claimed, error: claimError } = await supabaseAdmin
           .from("test_runs")
