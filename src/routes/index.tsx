@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import AppHeader from "@/components/qserve/AppHeader";
 import RecentRuns from "@/components/qserve/RecentRuns";
+import RunnerStatus from "@/components/qserve/RunnerStatus";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -145,8 +146,11 @@ function Dashboard() {
       <AppHeader />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
         <section data-testid="hero-section" className="space-y-2">
-          <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#8b949e]">
-            // Mission Control
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="text-[11px] font-mono-heading uppercase tracking-[0.18em] text-[#8b949e]">
+              // Mission Control
+            </div>
+            <RunnerStatus />
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-mono-heading">
             Ship Android builds with confidence.

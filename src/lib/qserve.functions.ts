@@ -19,6 +19,21 @@ export const listTestCases = createServerFn({ method: "GET" }).handler(async () 
 
 export const listDevices = createServerFn({ method: "GET" }).handler(async () => DEVICES);
 
+export const getRunnerHealth = createServerFn({ method: "GET" }).handler(async () => {
+  const url = (process.env.RENDER_URL || "https://qserve-test-manager.onrender.com").replace(/\/$/, "") + "/health";
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
+    const j = (await r.json()) as any;
+    return { ok: true, ...j };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "unreachable" };
+  }
+});
+
 export const getQrStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { data } = await (await sb()).from("qserve_settings").select("*").eq("key", "qr_media").maybeSingle();
   return { uploaded: !!data?.media_url, filename: data?.filename ?? "", media_url: data?.media_url ?? "" };
