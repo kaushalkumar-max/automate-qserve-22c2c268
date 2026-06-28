@@ -43,6 +43,56 @@ APP_ACTIVITY = "com.qart.qserve.MainActivity"
 POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
+# Runtime status, surfaced by main.py /health for "is the runner alive?" checks.
+RUNNER_STATUS: dict = {
+    "last_poll_at": None,
+    "last_job_id": None,
+    "last_step": None,
+    "last_heartbeat_at": None,
+}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def heartbeat(driver, run_id: str | None = None, message: str | None = None) -> None:
+    """Keep the Appium session alive AND surface progress to the DB.
+
+    BrowserStack idle-kills sessions after ~90s of no commands. A cheap
+    page_source / get_window_size call resets the idle timer; we also PATCH
+    the run row so the dashboard shows the loop is alive.
+    """
+    RUNNER_STATUS["last_heartbeat_at"] = _now_iso()
+    if driver is not None:
+        try:
+            driver.get_window_size()
+        except Exception:
+            try:
+                driver.page_source  # noqa: B018
+            except Exception:
+                pass
+    if run_id and message:
+        db_update(run_id, {"message": message})
+
+
+def wait_until(driver, predicate, timeout: float, run_id: str | None = None,
+               message: str | None = None, heartbeat_every: float = 25.0) -> bool:
+    """Bounded wait that emits a heartbeat every ~25s. Returns True if predicate holds."""
+    deadline = time.time() + timeout
+    next_beat = time.time() + heartbeat_every
+    while time.time() < deadline:
+        try:
+            if predicate(driver):
+                return True
+        except Exception:
+            pass
+        if time.time() >= next_beat:
+            heartbeat(driver, run_id, message)
+            next_beat = time.time() + heartbeat_every
+        time.sleep(0.5)
+    return False
+
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
 # Android photo picker fallback: first thumbnail in the Recent grid.
 # Normal flow uses element bounds; these are only used if Android exposes no
@@ -803,8 +853,20 @@ def step_tap_login(driver):
         raise RuntimeError("Login button did not appear after QR selection")
 
 def step_wait_home(driver):
-    if not has_any(driver, HOME_LOCATORS, timeout=12):
-        raise RuntimeError("Home screen did not appear after tapping Login")
+    # Bounded readiness probe with heartbeat: emits progress every ~25s and
+    # fails fast (25s) instead of waiting for BrowserStack's idle-kill.
+    run_id = RUNNER_STATUS.get("last_job_id")
+    ok = wait_until(
+        driver,
+        lambda d: has_any(d, HOME_LOCATORS, timeout=1),
+        timeout=25,
+        run_id=run_id,
+        message="Waiting for home screen to render after login…",
+    )
+    if not ok:
+        raise RuntimeError(
+            "Stuck after login: home screen never rendered (Catalogue/Logout not found within 25s)"
+        )
     # Match the proven local script: let the home bottom-nav finish rendering
     # before starting the post-login booking flow.
     time.sleep(6)
@@ -1059,6 +1121,8 @@ def execute(run: dict) -> None:
         failed_idx = None
         for idx, fn in enumerate(fns):
             rec.begin(idx)
+            RUNNER_STATUS["last_step"] = step_names[idx] if idx < len(step_names) else f"step {idx+1}"
+            heartbeat(driver, run_id, f"Step {idx + 1}/{len(fns)}: {RUNNER_STATUS['last_step']}")
             try:
                 force_portrait(driver)
                 fn(driver)
@@ -1092,8 +1156,10 @@ def main() -> None:
     print(f"QServe runner online. Polling {APP_BASE_URL} for queued runs…")
     while True:
         try:
+            RUNNER_STATUS["last_poll_at"] = _now_iso()
             job = db_select_queued()
             if job:
+                RUNNER_STATUS["last_job_id"] = job.get("run_id")
                 execute(job)
             else:
                 time.sleep(POLL_INTERVAL_SEC)
