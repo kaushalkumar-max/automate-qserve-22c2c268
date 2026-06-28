@@ -1063,17 +1063,6 @@ def step_wait_order(driver):   time.sleep(30)
 
 LOGIN_LOGOUT = [
     step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
-    step_done_picker, step_return_app, step_tap_login, step_wait_home, step_logout,
-]
-
-LOGIN_BROWSE = [
-    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
-    step_done_picker, step_return_app, step_tap_login, step_wait_home,
-    step_catalogue, step_brand_boys, step_logout,
-]
-
-LOGIN_BOOK_LOGOUT = [
-    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
     step_done_picker, step_return_app, step_tap_login, step_wait_home,
     step_catalogue, step_brand_boys, step_first_product, step_fill_sizes,
     step_plus, step_add_to_cart, step_home, step_cart_tab, step_save,
@@ -1081,9 +1070,7 @@ LOGIN_BOOK_LOGOUT = [
 ]
 
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
-    "login_logout":      LOGIN_LOGOUT,
-    "login_browse":      LOGIN_BROWSE,
-    "login_book_logout": LOGIN_BOOK_LOGOUT,
+    "login_logout": LOGIN_LOGOUT,
 }
 
 
