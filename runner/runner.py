@@ -1004,42 +1004,63 @@ def step_fill_sizes(driver):
     )
     if not edits:
         raise RuntimeError("No EditText found")
-    for ed in edits:
+    def _read_text(el):
         try:
-            ed.click()
-            time.sleep(0.1)
-            # Robust clear: existing text must be wiped before typing "1"
-            existing = ""
+            return (el.get_attribute("text") or el.text or "").strip()
+        except Exception:
+            return ""
+
+    def _clear_field(el):
+        el.click()
+        time.sleep(0.1)
+        try:
+            el.clear()
+        except Exception:
+            pass
+        time.sleep(0.1)
+        still = _read_text(el)
+        if still:
             try:
-                existing = ed.get_attribute("text") or ed.text or ""
-            except Exception:
-                existing = ""
-            try:
-                ed.clear()
+                driver.press_keycode(123)  # MOVE_END
+                for _ in range(len(still) + 3):
+                    driver.press_keycode(67)  # Backspace
             except Exception:
                 pass
-            # Fallback: select-all + delete via keyevents if clear() didn't work
-            try:
-                still = ed.get_attribute("text") or ""
-            except Exception:
-                still = ""
-            if still:
-                try:
-                    driver.press_keycode(123)  # MOVE_END
-                    for _ in range(len(still) + 2):
-                        driver.press_keycode(67)  # DEL (backspace)
-                except Exception:
-                    pass
-            try:
-                ed.send_keys("1")
-            except Exception:
+        time.sleep(0.1)
+
+    for idx, ed in enumerate(edits, start=1):
+        try:
+            _clear_field(ed)
+
+            entered = False
+            for write_attempt in range(3):
                 try:
                     ed.set_value("1")
                 except Exception:
-                    pass
+                    try:
+                        ed.click()
+                        driver.press_keycode(8)  # Android KEYCODE_1
+                    except Exception:
+                        try:
+                            ed.send_keys("1")
+                        except Exception:
+                            pass
+
+                time.sleep(0.15)
+                if _read_text(ed) == "1":
+                    entered = True
+                    break
+
+                # If it stayed blank or appended wrongly, clear and retry before
+                # moving to the next size box.
+                _clear_field(ed)
+
+            if not entered:
+                raise RuntimeError(f"Could not enter quantity 1 in size box {idx}")
+
             time.sleep(0.15)
         except Exception:
-            continue
+            raise
 
     time.sleep(0.3)
     dismissed = _click_with_locators(driver, [
