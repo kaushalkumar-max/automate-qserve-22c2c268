@@ -891,174 +891,227 @@ def step_logout(driver):
     el.click()
     time.sleep(2)
 
-def step_catalogue(driver):
-    # Let the home screen finish rendering its bottom nav before we tap.
-    time.sleep(3)
-
-    # 1. Try proven absolute coordinates FIRST — Flutter views rarely expose
-    #    useful resource-ids/accessibility-ids in page_source, so semantic
-    #    locators almost always time out silently on this app.
-    if tap_catalogue_coordinates(driver):
-        return
-
-    # 2. Semantic label (Flutter accessibility / text)
-    if _find_and_click(driver, "Catalogue", timeout=4):
-        time.sleep(1.5)
-        if catalogue_is_open(driver, timeout=4):
-            return
-
-    # 3. Known resource-id / accessibility locators
-    for by, sel in CATALOGUE_NAV_LOCATORS:
+def _click_with_locators(driver, locators: list, timeout_each: float = 2.5) -> bool:
+    """Try each (by, value) locator in order. Returns True on first success."""
+    for by, val in locators:
         try:
-            el = WebDriverWait(driver, 2).until(EC.element_to_be_clickable((by, sel)))
+            el = WebDriverWait(driver, timeout_each).until(
+                EC.element_to_be_clickable((by, val))
+            )
             el.click()
-            time.sleep(1.5)
-            if catalogue_is_open(driver, timeout=3):
-                return
+            return True
         except Exception:
             continue
+    return False
 
-    # 4. Parse page_source bounds for any catalogue node
-    if tap_catalogue_from_source_bounds(driver):
-        time.sleep(1.5)
-        if catalogue_is_open(driver, timeout=3):
-            return
 
-    # 5. Last resort: re-run coord taps and trust the tap even if the
-    #    catalogue-content detector hasn't found "Boys" yet — the next step
-    #    will surface a real failure if the screen never changed.
-    tap_catalogue_coordinates(driver)
-    time.sleep(2)
-    if catalogue_is_open(driver, timeout=4):
-        return
-    # Give brand_boys a chance — it will raise if catalogue truly didn't open.
-    return
+def step_catalogue(driver):
+    ok = _click_with_locators(driver, [
+        (AppiumBy.ID, "nav_catalogue"),
+        (AppiumBy.ID, f"{APP_PACKAGE}:id/nav_catalogue"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceId("nav_catalogue")'),
+        (AppiumBy.XPATH,
+         '//android.widget.ImageView[@resource-id="nav_catalogue"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Catalogue"),
+        (AppiumBy.ACCESSIBILITY_ID, "Catalogue Tab"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().descriptionContains("Catalogue")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().descriptionContains("catalog")'),
+    ])
+    if not ok:
+        tap_xy(driver, 888, 2219)
+    time.sleep(1)
+
 
 def step_brand_boys(driver):
-    if _find_and_click(driver, "Boys", timeout=10):
-        time.sleep(1.5)
-        return
-    try:
-        el = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((
-            AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().descriptionContains("Boys")'
-        )))
-        el.click()
-        time.sleep(1.5)
-        return
-    except Exception:
-        pass
-    raise RuntimeError("Brand 'Boys' not found")
+    ok = _click_with_locators(driver, [
+        (AppiumBy.XPATH,
+         '//android.view.View[@content-desc="Boys\n281 options"]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().descriptionContains("Boys")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().textContains("Boys")'),
+    ])
+    if not ok:
+        raise RuntimeError("Boys brand not found")
+    time.sleep(1)
+
 
 def step_first_product(driver):
-    W, H = _screen(driver)
-    try:
-        el = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((
-            AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().descriptionMatches("(?s).+\\n.+")'
-        )))
-        el.click()
+    tried = _click_with_locators(driver, [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView")'
+         '.descriptionMatches("(?s).+\\n.+")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().descriptionMatches("(?s).+\\n.+")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView")'
+         '.descriptionMatches(".*[0-9]{3,4}$")'),
+    ], timeout_each=2)
+    if tried:
         time.sleep(1)
         return
-    except Exception:
-        pass
 
+    candidates = []
     try:
-        els = driver.find_elements(
+        candidates = driver.find_elements(
             AppiumBy.XPATH,
-            '//android.widget.ImageView[@clickable="true"] | //android.view.View[@clickable="true"]',
+            '//android.widget.ImageView[@clickable="true"]'
+            ' | //android.view.View[@clickable="true"]',
         )
     except Exception:
-        els = []
-    candidates = []
-    for el in els:
+        pass
+    grid_items = []
+    for el in candidates:
         try:
             loc = el.location
             desc = el.get_attribute("content-desc") or ""
-            if 300 < loc["y"] < int(H * 0.85) and desc.strip():
-                candidates.append((loc["y"], loc["x"], el))
+            if 350 < loc["y"] < 1900 and desc.strip():
+                grid_items.append((loc["y"], loc["x"], el))
         except Exception:
             continue
-    candidates.sort(key=lambda t: (t[0], t[1]))
-    if candidates:
-        candidates[0][2].click()
+    grid_items.sort(key=lambda t: (t[0], t[1]))
+    if grid_items:
+        try:
+            grid_items[0][2].click()
+            time.sleep(1)
+            return
+        except Exception:
+            pass
+
+    try:
+        el = driver.find_element(
+            AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().className("android.widget.ImageView")'
+            '.clickable(true).instance(0)',
+        )
+        el.click()
         time.sleep(1)
         return
-    raise RuntimeError("First product card not found")
+    except Exception:
+        pass
+
+    raise RuntimeError("First product card not found in grid")
+
 
 def step_fill_sizes(driver):
-    inputs = WebDriverWait(driver, 15).until(
-        EC.presence_of_all_elements_located((AppiumBy.CLASS_NAME, "android.widget.EditText")))
-    if not inputs:
-        raise RuntimeError("No quantity fields found")
-    for inp in inputs:
+    edits = WebDriverWait(driver, 15).until(
+        EC.presence_of_all_elements_located(
+            (AppiumBy.CLASS_NAME, "android.widget.EditText")
+        )
+    )
+    if not edits:
+        raise RuntimeError("No EditText found")
+    for ed in edits:
         try:
-            inp.click(); inp.clear()
+            ed.click()
+            ed.clear()
             try:
-                inp.set_value("1")
+                ed.set_value("1")
             except Exception:
-                inp.send_keys("1")
+                ed.send_keys("1")
             time.sleep(0.15)
         except Exception:
             continue
     time.sleep(0.3)
-    if not _find_and_click(driver, "Dismiss", timeout=2):
-        try:
-            driver.hide_keyboard()
-        except Exception:
-            pass
+    dismissed = _click_with_locators(driver, [
+        (AppiumBy.ACCESSIBILITY_ID, "Dismiss"),
+        (AppiumBy.XPATH, '//*[@content-desc="Dismiss"]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().description("Dismiss")'),
+    ], timeout_each=1.5)
+    if not dismissed:
+        tap_xy(driver, 248, 2360)
     time.sleep(0.5)
 
+
 def step_plus(driver):
-    W, H = _screen(driver)
-    try:
-        el = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((
-            AppiumBy.ANDROID_UIAUTOMATOR,
-            'new UiSelector().className("android.widget.Button").text("+")'
-        )))
-        el.click()
-    except Exception:
-        try:
-            el = driver.find_element(
-                AppiumBy.ANDROID_UIAUTOMATOR,
-                'new UiSelector().className("android.widget.Button").instance(1)'
-            )
-            el.click()
-        except Exception:
-            tap_absolute(driver, int(W * 0.82), int(H * 0.80))
+    ok = _click_with_locators(driver, [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").text("+")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.XPATH,
+         '(//android.view.View[@content-desc="0"])[1]/android.widget.Button[2]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(0)'),
+    ])
+    if not ok:
+        tap_xy(driver, 887, 1919)
     time.sleep(0.6)
 
+
 def step_add_to_cart(driver):
-    if _find_and_click(driver, "Add to Cart", timeout=10):
-        time.sleep(1)
-        return
-    if _find_and_click(driver, "Add to cart", timeout=5):
-        time.sleep(1)
-        return
-    raise RuntimeError("Could not find 'Add to Cart' button")
+    ok = _click_with_locators(driver, [
+        (AppiumBy.XPATH,
+         '//android.widget.ImageView[@content-desc="Add to cart"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Add to cart"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().description("Add to cart")'),
+    ])
+    if not ok:
+        tap_xy(driver, 679, 2360)
+    time.sleep(1)
+
 
 def step_home(driver):
-    if not _find_and_click(driver, "Home", timeout=10):
-        raise RuntimeError("Could not find 'Home' button")
+    ok = _click_with_locators(driver, [
+        (AppiumBy.XPATH,
+         "//android.widget.FrameLayout[@resource-id='android:id/content']"
+         "/android.widget.FrameLayout/android.view.View/android.view.View"
+         "/android.view.View/android.view.View/android.widget.Button"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(0)'),
+        (AppiumBy.ACCESSIBILITY_ID, "Home"),
+        (AppiumBy.ACCESSIBILITY_ID, "Home Tab"),
+    ])
+    if not ok:
+        tap_xy(driver, 540, 2221)
     time.sleep(1)
+
 
 def step_cart_tab(driver):
-    if not _find_and_click(driver, "Cart", timeout=10):
-        raise RuntimeError("Could not find 'Cart' tab")
+    ok = _click_with_locators(driver, [
+        (AppiumBy.ID, "nav_cart"),
+        (AppiumBy.ID, f"{APP_PACKAGE}:id/nav_cart"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().resourceId("nav_cart")'),
+        (AppiumBy.XPATH,
+         '//android.widget.ImageView[@resource-id="nav_cart"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Cart"),
+        (AppiumBy.ACCESSIBILITY_ID, "Cart Tab"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().descriptionContains("Cart")'),
+    ])
+    if not ok:
+        tap_xy(driver, 935, 2219)
     time.sleep(1)
 
+
 def step_save(driver):
-    if not _find_and_click(driver, "SAVE", timeout=20):
-        raise RuntimeError("Could not find 'SAVE' button")
+    el = WebDriverWait(driver, 20).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "SAVE"))
+    )
+    el.click()
     time.sleep(1)
+
 
 def step_signature(driver):    draw_signature(driver)
 
+
 def step_submit(driver):
-    if not _find_and_click(driver, "Submit", timeout=15):
-        raise RuntimeError("Could not find 'Submit' button")
+    el = WebDriverWait(driver, 15).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Submit"))
+    )
+    el.click()
+
 
 def step_wait_order(driver):   time.sleep(30)
+
 
 
 LOGIN_LOGOUT = [
