@@ -1156,8 +1156,10 @@ def main() -> None:
     print(f"QServe runner online. Polling {APP_BASE_URL} for queued runs…")
     while True:
         try:
+            RUNNER_STATUS["last_poll_at"] = _now_iso()
             job = db_select_queued()
             if job:
+                RUNNER_STATUS["last_job_id"] = job.get("run_id")
                 execute(job)
             else:
                 time.sleep(POLL_INTERVAL_SEC)
