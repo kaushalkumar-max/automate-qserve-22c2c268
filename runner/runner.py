@@ -853,23 +853,11 @@ def step_tap_login(driver):
         raise RuntimeError("Login button did not appear after QR selection")
 
 def step_wait_home(driver):
-    # Bounded readiness probe with heartbeat: emits progress every ~25s and
-    # fails fast (25s) instead of waiting for BrowserStack's idle-kill.
-    run_id = RUNNER_STATUS.get("last_job_id")
-    ok = wait_until(
-        driver,
-        lambda d: has_any(d, HOME_LOCATORS, timeout=1),
-        timeout=25,
-        run_id=run_id,
-        message="Waiting for home screen to render after login…",
-    )
-    if not ok:
-        raise RuntimeError(
-            "Stuck after login: home screen never rendered (Catalogue/Logout not found within 25s)"
-        )
-    # Match the proven local script: let the home bottom-nav finish rendering
-    # before starting the post-login booking flow.
-    time.sleep(6)
+    # Adopted from working uploaded runner: don't gate on Catalogue/Logout
+    # detection — the home screen renders reliably ~4s after the login tap.
+    # Gating was causing false "stuck after login" failures even when the
+    # home screen was actually visible.
+    time.sleep(4)
 def _screen(driver):
     s = driver.get_window_size()
     return s["width"], s["height"]
