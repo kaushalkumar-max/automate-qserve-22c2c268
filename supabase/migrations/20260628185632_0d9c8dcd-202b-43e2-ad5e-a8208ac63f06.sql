@@ -1,0 +1,1 @@
+UPDATE test_runs SET status='failed', passed=false, message='Runner process restarted mid-run (no heartbeat for >2 min). Run was abandoned.', updated_at=now() WHERE status IN ('running','starting','queued') AND updated_at < now() - interval '90 seconds';
