@@ -43,6 +43,56 @@ APP_ACTIVITY = "com.qart.qserve.MainActivity"
 POLL_INTERVAL_SEC = 5
 BS_HUB = f"https://{BS_USER}:{BS_KEY}@hub-cloud.browserstack.com/wd/hub"
 
+# Runtime status, surfaced by main.py /health for "is the runner alive?" checks.
+RUNNER_STATUS: dict = {
+    "last_poll_at": None,
+    "last_job_id": None,
+    "last_step": None,
+    "last_heartbeat_at": None,
+}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def heartbeat(driver, run_id: str | None = None, message: str | None = None) -> None:
+    """Keep the Appium session alive AND surface progress to the DB.
+
+    BrowserStack idle-kills sessions after ~90s of no commands. A cheap
+    page_source / get_window_size call resets the idle timer; we also PATCH
+    the run row so the dashboard shows the loop is alive.
+    """
+    RUNNER_STATUS["last_heartbeat_at"] = _now_iso()
+    if driver is not None:
+        try:
+            driver.get_window_size()
+        except Exception:
+            try:
+                driver.page_source  # noqa: B018
+            except Exception:
+                pass
+    if run_id and message:
+        db_update(run_id, {"message": message})
+
+
+def wait_until(driver, predicate, timeout: float, run_id: str | None = None,
+               message: str | None = None, heartbeat_every: float = 25.0) -> bool:
+    """Bounded wait that emits a heartbeat every ~25s. Returns True if predicate holds."""
+    deadline = time.time() + timeout
+    next_beat = time.time() + heartbeat_every
+    while time.time() < deadline:
+        try:
+            if predicate(driver):
+                return True
+        except Exception:
+            pass
+        if time.time() >= next_beat:
+            heartbeat(driver, run_id, message)
+            next_beat = time.time() + heartbeat_every
+        time.sleep(0.5)
+    return False
+
 LOGIN_X_PCT, LOGIN_Y_PCT = 0.50, 0.70
 # Android photo picker fallback: first thumbnail in the Recent grid.
 # Normal flow uses element bounds; these are only used if Android exposes no
