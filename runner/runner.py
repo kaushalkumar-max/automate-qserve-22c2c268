@@ -1121,6 +1121,8 @@ def execute(run: dict) -> None:
         failed_idx = None
         for idx, fn in enumerate(fns):
             rec.begin(idx)
+            RUNNER_STATUS["last_step"] = step_names[idx] if idx < len(step_names) else f"step {idx+1}"
+            heartbeat(driver, run_id, f"Step {idx + 1}/{len(fns)}: {RUNNER_STATUS['last_step']}")
             try:
                 force_portrait(driver)
                 fn(driver)
