@@ -1007,14 +1007,40 @@ def step_fill_sizes(driver):
     for ed in edits:
         try:
             ed.click()
-            ed.clear()
+            time.sleep(0.1)
+            # Robust clear: existing text must be wiped before typing "1"
+            existing = ""
             try:
-                ed.set_value("1")
+                existing = ed.get_attribute("text") or ed.text or ""
             except Exception:
+                existing = ""
+            try:
+                ed.clear()
+            except Exception:
+                pass
+            # Fallback: select-all + delete via keyevents if clear() didn't work
+            try:
+                still = ed.get_attribute("text") or ""
+            except Exception:
+                still = ""
+            if still:
+                try:
+                    driver.press_keycode(123)  # MOVE_END
+                    for _ in range(len(still) + 2):
+                        driver.press_keycode(67)  # DEL (backspace)
+                except Exception:
+                    pass
+            try:
                 ed.send_keys("1")
+            except Exception:
+                try:
+                    ed.set_value("1")
+                except Exception:
+                    pass
             time.sleep(0.15)
         except Exception:
             continue
+
     time.sleep(0.3)
     dismissed = _click_with_locators(driver, [
         (AppiumBy.ACCESSIBILITY_ID, "Dismiss"),
