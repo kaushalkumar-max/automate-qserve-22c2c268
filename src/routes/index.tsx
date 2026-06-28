@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import AppHeader from "@/components/qserve/AppHeader";
 import RecentRuns from "@/components/qserve/RecentRuns";
+import RunnerStatus from "@/components/qserve/RunnerStatus";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
