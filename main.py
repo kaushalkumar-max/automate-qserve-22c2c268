@@ -54,4 +54,10 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "runner_started": _runner_started}
+    status = {"status": "ok", "runner_started": _runner_started}
+    try:
+        from runner import RUNNER_STATUS  # type: ignore
+        status["runner"] = RUNNER_STATUS
+    except Exception as exc:
+        status["runner_error"] = str(exc)
+    return status
