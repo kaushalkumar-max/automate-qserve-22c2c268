@@ -884,8 +884,11 @@ def _find_and_click(driver, label: str, timeout: int = 10) -> bool:
         return False
 
 def step_logout(driver):
-    if not _find_and_click(driver, "Logout", timeout=30):
-        raise RuntimeError("Could not find 'Logout' button")
+    # Adopted verbatim from working uploaded runner.
+    el = WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Logout"))
+    )
+    el.click()
     time.sleep(2)
 
 def step_catalogue(driver):
