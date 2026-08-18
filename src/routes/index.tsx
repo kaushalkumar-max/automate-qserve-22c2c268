@@ -44,6 +44,7 @@ function Dashboard() {
     getQrStatus().then((d) => {
       setQrUploaded(!!d.uploaded);
       if (d.filename) setQrFilename(d.filename);
+      setQrMediaUrl(d.media_url || "");
     }).catch(() => {});
 
   const refreshApk = () =>
