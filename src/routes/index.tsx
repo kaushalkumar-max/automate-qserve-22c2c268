@@ -112,6 +112,7 @@ function Dashboard() {
       if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
       setQrUploaded(true);
       setQrFilename(file.name);
+      setQrMediaUrl(j.media_url || "");
       toast.success("QR image uploaded", { description: j.media_url });
     } catch (e: any) {
       toast.error("QR upload failed", { description: e.message });
