@@ -49,6 +49,7 @@ export type Database = {
           os_version: string | null
           passed: boolean | null
           public_url: string | null
+          qr_media_url: string | null
           run_id: string
           screenshots: Json | null
           session_id: string | null
@@ -74,6 +75,7 @@ export type Database = {
           os_version?: string | null
           passed?: boolean | null
           public_url?: string | null
+          qr_media_url?: string | null
           run_id?: string
           screenshots?: Json | null
           session_id?: string | null
@@ -99,6 +101,7 @@ export type Database = {
           os_version?: string | null
           passed?: boolean | null
           public_url?: string | null
+          qr_media_url?: string | null
           run_id?: string
           screenshots?: Json | null
           session_id?: string | null
