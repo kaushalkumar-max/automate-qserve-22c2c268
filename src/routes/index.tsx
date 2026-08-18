@@ -32,6 +32,7 @@ function Dashboard() {
   const [qrUploading, setQrUploading] = useState(false);
   const [qrUploaded, setQrUploaded] = useState(false);
   const [qrFilename, setQrFilename] = useState("");
+  const [qrMediaUrl, setQrMediaUrl] = useState("");
   const [runs, setRuns] = useState<any[]>([]);
   const [runsLoading, setRunsLoading] = useState(true);
   const [starting, setStarting] = useState(false);
