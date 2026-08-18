@@ -3,15 +3,16 @@ import { getRunnerHealth } from "@/lib/qserve.functions";
 
 type Health = {
   ok: boolean;
-  error?: string;
+  error?: string | null;
   runner_started?: boolean;
   runner?: {
     last_poll_at?: string | null;
     last_job_id?: string | null;
     last_step?: string | null;
     last_heartbeat_at?: string | null;
-  };
+  } | null;
 };
+
 
 function secsAgo(iso?: string | null): string {
   if (!iso) return "—";
