@@ -497,12 +497,46 @@ PICKER_SURFACE_LOCATORS = [
 ]
 
 
+def current_pkg(driver) -> str:
+    """Foreground package name, resilient across Appium/UiAutomator2 versions.
+
+    Newer appium-python-client maps driver.current_package to the
+    `mobile: getCurrentPackage` extension, which older UiAutomator2 drivers on
+    BrowserStack do not implement (UnknownMethodException). Fall back to a
+    shell dumpsys query and finally to the page source root package attribute.
+    """
+    try:
+        pkg = driver.current_package
+        if pkg:
+            return pkg
+    except Exception:
+        pass
+    try:
+        out = driver.execute_script("mobile: shell", {
+            "command": "dumpsys",
+            "args": ["window", "windows"],
+        }) or ""
+        m = re.search(r"mCurrentFocus=\S+\s+\S+\s+([A-Za-z0-9_.]+)/", str(out))
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    try:
+        m = re.search(r'package="([^"]+)"', driver.page_source or "")
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
 def is_picker_package(driver) -> bool:
     try:
-        pkg = driver.current_package.lower()
-        return any(marker in pkg for marker in PICKER_PACKAGE_MARKERS)
+        pkg = current_pkg(driver).lower()
+        return bool(pkg) and any(marker in pkg for marker in PICKER_PACKAGE_MARKERS)
     except Exception:
         return False
+
 
 
 def picker_is_open(driver) -> bool:
