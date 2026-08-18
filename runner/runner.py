@@ -497,12 +497,46 @@ PICKER_SURFACE_LOCATORS = [
 ]
 
 
+def current_pkg(driver) -> str:
+    """Foreground package name, resilient across Appium/UiAutomator2 versions.
+
+    Newer appium-python-client maps driver.current_package to the
+    `mobile: getCurrentPackage` extension, which older UiAutomator2 drivers on
+    BrowserStack do not implement (UnknownMethodException). Fall back to a
+    shell dumpsys query and finally to the page source root package attribute.
+    """
+    try:
+        pkg = driver.current_package
+        if pkg:
+            return pkg
+    except Exception:
+        pass
+    try:
+        out = driver.execute_script("mobile: shell", {
+            "command": "dumpsys",
+            "args": ["window", "windows"],
+        }) or ""
+        m = re.search(r"mCurrentFocus=\S+\s+\S+\s+([A-Za-z0-9_.]+)/", str(out))
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    try:
+        m = re.search(r'package="([^"]+)"', driver.page_source or "")
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
 def is_picker_package(driver) -> bool:
     try:
-        pkg = driver.current_package.lower()
-        return any(marker in pkg for marker in PICKER_PACKAGE_MARKERS)
+        pkg = current_pkg(driver).lower()
+        return bool(pkg) and any(marker in pkg for marker in PICKER_PACKAGE_MARKERS)
     except Exception:
         return False
+
 
 
 def picker_is_open(driver) -> bool:
@@ -559,13 +593,35 @@ HOME_LOCATORS = [
 def ensure_app_open(driver):
     try:
         driver.activate_app(APP_PACKAGE)
-        WebDriverWait(driver, 8).until(lambda d: d.current_package == APP_PACKAGE)
+        WebDriverWait(driver, 8).until(lambda d: current_pkg(d) == APP_PACKAGE)
         return
     except Exception:
         pass
-    driver.execute_script("mobile: startActivity",
-                          {"component": f"{APP_PACKAGE}/{APP_ACTIVITY}"})
-    WebDriverWait(driver, 15).until(lambda d: d.current_package == APP_PACKAGE)
+    for launch in (
+        lambda: driver.execute_script("mobile: startActivity",
+                                      {"component": f"{APP_PACKAGE}/{APP_ACTIVITY}"}),
+        lambda: driver.execute_script("mobile: shell", {
+            "command": "am",
+            "args": ["start", "-n", f"{APP_PACKAGE}/{APP_ACTIVITY}"],
+        }),
+        lambda: driver.execute_script("mobile: shell", {
+            "command": "monkey",
+            "args": ["-p", APP_PACKAGE, "-c", "android.intent.category.LAUNCHER", "1"],
+        }),
+    ):
+        try:
+            launch()
+        except Exception:
+            continue
+        try:
+            WebDriverWait(driver, 15).until(lambda d: current_pkg(d) == APP_PACKAGE)
+            return
+        except Exception:
+            continue
+    # Last resort: if any app UI is rendering, let the flow continue instead of
+    # hard-failing step 1 on a package-detection quirk.
+    if not (driver.page_source or "").strip():
+        raise RuntimeError("Could not bring the app to the foreground")
 
 def try_click(driver, locators, timeout=3) -> bool:
     for by, val in locators:
@@ -738,7 +794,7 @@ def step_tap_photo(driver):
     time.sleep(2)
 
     try:
-        pkg = driver.current_package.lower()
+        pkg = current_pkg(driver).lower()
     except Exception:
         pkg = ""
 
@@ -808,7 +864,7 @@ def step_done_picker(driver):
         raise RuntimeError("QR image is not selected; refusing to press Back or Add")
 
     if not picker_is_open(driver):
-        WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
+        WebDriverWait(driver, 12).until(lambda d: current_pkg(d) == APP_PACKAGE)
         time.sleep(2)
         return
 
@@ -826,11 +882,11 @@ def step_done_picker(driver):
         # Confirm button fallback: bottom-right on Android photo picker.
         W, H = _screen(driver)
         tap_xy_once(driver, int(W * 0.84), int(H * 0.96))
-    WebDriverWait(driver, 12).until(lambda d: d.current_package == APP_PACKAGE)
+    WebDriverWait(driver, 12).until(lambda d: current_pkg(d) == APP_PACKAGE)
     time.sleep(2)
 
 def step_return_app(driver):
-    WebDriverWait(driver, 18).until(lambda d: d.current_package == APP_PACKAGE)
+    WebDriverWait(driver, 18).until(lambda d: current_pkg(d) == APP_PACKAGE)
     if not has_any(driver, LOGIN_LOCATORS + HOME_LOCATORS, timeout=8):
         if has_any(driver, SCAN_QR_LOCATORS, timeout=1):
             return
