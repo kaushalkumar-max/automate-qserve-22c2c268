@@ -71,14 +71,21 @@ export const Route = createFileRoute("/api/public/runner-next")({
         if (claimError) return json({ error: claimError.message }, 500);
         if (!claimed) return json({ job: null });
 
-        // Attach QR media URL (already uploaded to BrowserStack as media://...)
-        const { data: qr } = await supabaseAdmin
-          .from("qserve_settings")
-          .select("media_url")
-          .eq("key", "qr_media")
-          .maybeSingle();
+        // Use the QR media snapshotted onto the run when it was queued (the
+        // image uploaded in the portal at that moment). Fall back to the
+        // current setting only for older rows without a snapshot.
+        let qrUrl = (claimed as { qr_media_url?: string | null }).qr_media_url ?? null;
+        if (!qrUrl) {
+          const { data: qr } = await supabaseAdmin
+            .from("qserve_settings")
+            .select("media_url")
+            .eq("key", "qr_media")
+            .maybeSingle();
+          qrUrl = qr?.media_url ?? null;
+        }
 
-        return json({ job: { ...claimed, qr_media_url: qr?.media_url ?? null } });
+        return json({ job: { ...claimed, qr_media_url: qrUrl } });
+
       },
     },
   },

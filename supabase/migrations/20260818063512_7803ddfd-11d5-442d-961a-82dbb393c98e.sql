@@ -1,0 +1,1 @@
+ALTER TABLE public.test_runs ADD COLUMN IF NOT EXISTS qr_media_url text;

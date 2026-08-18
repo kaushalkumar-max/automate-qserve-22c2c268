@@ -121,7 +121,15 @@ export const runTest = createServerFn({ method: "POST" })
     const tc = TEST_CASES[data.test_case];
     if (!tc) throw new Error(`Unknown test case: ${data.test_case}`);
     const dev = DEVICES.find((d) => d.id === data.device_id) || DEVICES[0];
-    const { data: row, error } = await (await sb())
+    const client = await sb();
+
+    // Snapshot the QR image that is uploaded in the portal right now, so the
+    // run always uses that exact media (never a stale/hardcoded one).
+    const { data: qr } = await client
+      .from("qserve_settings").select("media_url").eq("key", "qr_media").maybeSingle();
+    if (!qr?.media_url) throw new Error("No QR image uploaded. Upload the login QR image before running a test.");
+
+    const { data: row, error } = await client
       .from("test_runs")
       .insert({
         status: "queued",
@@ -132,11 +140,13 @@ export const runTest = createServerFn({ method: "POST" })
         device_id: dev.id,
         os_version: dev.os_version,
         app_url: data.app_url,
+        qr_media_url: qr.media_url,
         steps_total: tc.steps.length,
         step_names: tc.steps,
         message: "Queued for execution by external runner",
       })
       .select("run_id").single();
+
     if (error) throw new Error(error.message);
     return { run_id: row!.run_id };
   });

@@ -64,8 +64,25 @@ export const Route = createFileRoute("/api/public/bs-upload")({
             const artifactUrl = kind === "media" ? parsed.media_url : parsed.app_url;
             if (artifactUrl) {
               const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+              const settingKey = kind === "media" ? "qr_media" : "apk_build";
+
+              // For QR media, remove the previously uploaded image from
+              // BrowserStack so only the freshly uploaded QR is injected into
+              // the device gallery at test time.
+              if (kind === "media") {
+                const { data: prev } = await supabaseAdmin
+                  .from("qserve_settings").select("media_url").eq("key", settingKey).maybeSingle();
+                const prevId = prev?.media_url?.replace("media://", "");
+                if (prevId && prev?.media_url !== artifactUrl) {
+                  await fetch(
+                    `https://api-cloud.browserstack.com/app-automate/custom_media/delete/${prevId}`,
+                    { method: "DELETE", headers: { Authorization: auth } },
+                  ).catch(() => {});
+                }
+              }
+
               await supabaseAdmin.from("qserve_settings").upsert({
-                key: kind === "media" ? "qr_media" : "apk_build",
+                key: settingKey,
                 media_url: artifactUrl,
                 filename,
                 uploaded_at: new Date().toISOString(),
@@ -75,6 +92,7 @@ export const Route = createFileRoute("/api/public/bs-upload")({
             // fall through — return BrowserStack's body as-is
           }
         }
+
 
         return new Response(text, {
           status: 200,
