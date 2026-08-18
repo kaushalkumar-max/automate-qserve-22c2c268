@@ -22,17 +22,34 @@ export const listDevices = createServerFn({ method: "GET" }).handler(async () =>
 export const getRunnerHealth = createServerFn({ method: "GET" }).handler(async () => {
   const url = (process.env.RENDER_URL || "https://qserve-test-manager.onrender.com").replace(/\/$/, "") + "/health";
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
-    const j = (await r.json()) as any;
-    return { ok: true, ...j };
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status}`, runner_started: false, runner: null };
+    const text = await r.text();
+    let j: any = {};
+    try {
+      j = JSON.parse(text);
+    } catch {
+      return { ok: false, error: "bad response", runner_started: false, runner: null };
+    }
+    const runner = j?.runner ?? null;
+    return {
+      ok: true,
+      error: null,
+      runner_started: !!j?.runner_started,
+      runner: runner
+        ? {
+            last_poll_at: runner.last_poll_at ?? null,
+            last_job_id: runner.last_job_id ?? null,
+            last_step: runner.last_step ?? null,
+            last_heartbeat_at: runner.last_heartbeat_at ?? null,
+          }
+        : null,
+    };
   } catch (e: any) {
-    return { ok: false, error: e?.message || "unreachable" };
+    return { ok: false, error: String(e?.message ?? "unreachable"), runner_started: false, runner: null };
   }
 });
+
 
 export const getQrStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { data } = await (await sb()).from("qserve_settings").select("*").eq("key", "qr_media").maybeSingle();
