@@ -1,0 +1,1 @@
+update public.qserve_settings set media_url = 'media://6a4442001f7cd691793cd6be547abf37f17551e8', filename = 'Screenshot 2026-02-21 113902.png', uploaded_at = now() where key = 'qr_media';
