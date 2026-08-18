@@ -32,6 +32,7 @@ function Dashboard() {
   const [qrUploading, setQrUploading] = useState(false);
   const [qrUploaded, setQrUploaded] = useState(false);
   const [qrFilename, setQrFilename] = useState("");
+  const [qrMediaUrl, setQrMediaUrl] = useState("");
   const [runs, setRuns] = useState<any[]>([]);
   const [runsLoading, setRunsLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -43,6 +44,7 @@ function Dashboard() {
     getQrStatus().then((d) => {
       setQrUploaded(!!d.uploaded);
       if (d.filename) setQrFilename(d.filename);
+      setQrMediaUrl(d.media_url || "");
     }).catch(() => {});
 
   const refreshApk = () =>
@@ -110,6 +112,7 @@ function Dashboard() {
       if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
       setQrUploaded(true);
       setQrFilename(file.name);
+      setQrMediaUrl(j.media_url || "");
       toast.success("QR image uploaded", { description: j.media_url });
     } catch (e: any) {
       toast.error("QR upload failed", { description: e.message });
@@ -252,8 +255,17 @@ function Dashboard() {
                 {qrUploaded ? qrFilename || "QR image ready" : "Upload QR image"}
               </div>
               <div className="text-[11px] text-[#8b949e] font-mono-heading mt-1">
-                {qrUploading ? "Uploading..." : qrUploaded ? "Reused across all runs" : "PNG / JPG — required for login flow"}
+                {qrUploading
+                  ? "Uploading..."
+                  : qrUploaded
+                    ? "This image is used for the next run"
+                    : "PNG / JPG — required for login flow"}
               </div>
+              {qrUploaded && qrMediaUrl && (
+                <div className="text-[10px] text-[#6e7681] font-mono-heading mt-1 break-all px-2">
+                  {qrMediaUrl}
+                </div>
+              )}
             </button>
             <input
               ref={qrInputRef}
