@@ -13,6 +13,17 @@ export const TEST_CASES: Record<string, TestCase> = {
       "Draw Signature","Submit Order","Wait for Order Save","Tap Logout",
     ],
   },
+  product_deletion: {
+    key: "product_deletion",
+    name: "Product Deletion (Clear Cart)",
+    steps: [
+      "Open App", "Tap Scan QR from Gallery", "Photo Picker Opens",
+      "Select QR Image", "Tap Done in Picker", "Return to App",
+      "Tap Login Button", "Wait for Home Screen", "Open Cart Tab",
+      "Clear All Cart Items", "Tap SAVE", "Draw Signature",
+      "Submit Order", "Wait for Order Save", "Tap Logout",
+    ],
+  },
 };
 
 export const DEVICES: Device[] = [
