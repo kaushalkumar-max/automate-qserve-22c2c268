@@ -1225,8 +1225,133 @@ LOGIN_LOGOUT = [
     step_signature, step_submit, step_wait_order, step_logout,
 ]
 
+CART_SWIPE_X1, CART_SWIPE_Y1 = 843, 837   # unchanged from your script
+CART_SWIPE_X2, CART_SWIPE_Y2 = 304, 827   # unchanged from your script
+
+CART_DELETE_SELECTOR = 'new UiSelector().className("android.view.View").instance(17)'
+CART_BACK_SELECTOR = 'new UiSelector().className("android.widget.Button").instance(0)'
+CART_EXTRA_BACK_SELECTOR = 'new UiSelector().className("android.widget.ImageView").instance(2)'
+
+
+def swipe_w3c_touch(driver, x1, y1, x2, y2):
+    """Same W3C touch swipe you already proved works — unchanged."""
+    touch = PointerInput(interaction.POINTER_TOUCH, "touch")
+    actions = ActionBuilder(driver, mouse=touch)
+    actions.pointer_action.move_to_location(int(x1), int(y1))
+    actions.pointer_action.pointer_down()
+    actions.pointer_action.move_to_location(int(x2), int(y2))
+    actions.pointer_action.release()
+    actions.perform()
+
+
+def get_first_category_row(driver):
+    """Unchanged from your script — finds the first numeric content-desc row."""
+    screen = driver.get_window_size()
+    H = screen["height"]
+    top_limit = int(H * 0.15)
+    bottom_limit = int(H * 0.88)
+    try:
+        candidates = driver.find_elements(
+            AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().className("android.view.View")'
+        )
+        for elem in candidates:
+            desc = (elem.get_attribute("content-desc") or "").strip()
+            if not desc or not desc.isdigit():
+                continue
+            try:
+                y = elem.location["y"]
+                if y < top_limit or y > bottom_limit:
+                    continue
+            except Exception:
+                continue
+            return elem
+    except Exception:
+        pass
+    return None
+
+
+def delete_all_options_in_category(driver):
+    """Unchanged from your script — one swipe, then click delete until gone."""
+    deleted = 0
+    swipe_w3c_touch(driver, CART_SWIPE_X1, CART_SWIPE_Y1, CART_SWIPE_X2, CART_SWIPE_Y2)
+    time.sleep(0.6)
+    while True:
+        matches = driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CART_DELETE_SELECTOR)
+        if not matches:
+            break
+        try:
+            matches[0].click()
+            deleted += 1
+            time.sleep(0.6)
+        except Exception:
+            break
+    return deleted
+
+
+def cart_back_to_cart(driver):
+    """Unchanged from your script (back_to_cart), renamed to avoid clashing
+    with runner.py's existing tap-based back helpers."""
+    try:
+        driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, CART_BACK_SELECTOR).click()
+    except Exception:
+        driver.back()
+    time.sleep(1.2)
+
+
+def clear_entire_cart(driver):
+    """Same per-category loop as your script: tap tile -> swipe -> delete
+    until empty -> back -> repeat until no more category rows."""
+    brand_count = 0
+    option_count = 0
+
+    while True:
+        time.sleep(0.5)
+        cat_row = get_first_category_row(driver)
+        if cat_row is None:
+            break
+
+        brand_count += 1
+        try:
+            cat_row.click()
+            time.sleep(2)
+        except Exception as e:
+            raise RuntimeError(f"Could not tap category #{brand_count}: {e}")
+
+        option_count += delete_all_options_in_category(driver)
+        cart_back_to_cart(driver)
+
+    # Best-effort extra back tap (el7 in your trace) — unchanged, still
+    # can't crash the run if it's not present.
+    try:
+        driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR, CART_EXTRA_BACK_SELECTOR).click()
+        time.sleep(0.8)
+    except Exception:
+        pass
+
+    if brand_count == 0:
+        # Added — see note at top of file. Delete this block to restore
+        # your original "silent pass on empty cart" behavior.
+        raise RuntimeError("No category rows found — cart was already empty")
+
+    return brand_count, option_count
+
+
+def step_clear_cart(driver):
+    clear_entire_cart(driver)
+
+
+PRODUCT_DELETION = [
+    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
+    step_done_picker, step_return_app, step_tap_login, step_wait_home,
+    step_cart_tab, step_clear_cart, step_save,
+    step_signature, step_submit, step_wait_order, step_logout,
+]
+
+
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout": LOGIN_LOGOUT,
+    "product_deletion": PRODUCT_DELETION,
 }
 
 
