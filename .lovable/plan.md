@@ -1,28 +1,54 @@
-## Answer
+# Add second test case: Product Deletion (Clear Cart)
 
-Both endpoints exist and are working as designed.
+Wire the uploaded add-on into the runner and the dashboard so users can pick
+between two test cases.
 
-- `GET /api/public/runner-next` — `src/routes/api/public/runner-next.ts`. Live probe returns `401 Unauthorized` without credentials, which is correct: the route is gated by HTTP Basic using `BROWSERSTACK_USERNAME` / `BROWSERSTACK_ACCESS_KEY` (timing-safe compare). With those creds, it atomically claims the next `status='queued'` row in `test_runs`, flips it to `starting`, attaches the QR `media_url`, and returns the job.
-- `PATCH /api/public/runner-update` — `src/routes/api/public/runner-update.ts`. Same Basic-auth gate. Accepts `{ run_id, patch }`, whitelists patch fields, stamps `updated_at`, writes via the admin client.
+## 1. runner/runner.py
 
-Both live under `/api/public/*`, so Lovable's published-site auth gate is bypassed and they're reachable from anywhere via `https://automate-qserve.lovable.app/api/public/...`.
+Paste the "ADD TO runner.py" block verbatim, immediately above the
+`TEST_CASES` dict (currently at line 1228), after the `LOGIN_LOGOUT` list:
 
-## Where `runner.py` runs
+- Constants: `CART_SWIPE_X1/Y1 = 843, 837`, `CART_SWIPE_X2/Y2 = 304, 827`,
+  `CART_DELETE_SELECTOR` (instance 17), `CART_BACK_SELECTOR` (instance 0),
+  `CART_EXTRA_BACK_SELECTOR` (instance 2) — copied unchanged.
+- Helpers: `swipe_w3c_touch`, `get_first_category_row`,
+  `delete_all_options_in_category`, `cart_back_to_cart`, `clear_entire_cart`.
+- Step: `step_clear_cart`.
+- `PRODUCT_DELETION` list — 15 steps, reusing the existing hardened
+  `step_open_app` … `step_cart_tab`, then `step_clear_cart`, `step_save`,
+  `step_signature`, `step_submit`, `step_wait_order`, `step_logout`.
 
-Outside Lovable, as a separate always-on process. Lovable hosts the dashboard (TanStack Start on Cloudflare Workers) plus the two endpoints above; it can't host a long-running Python Appium polling loop. Your repo is already set up for Render:
+Then extend the registry:
 
-- `Procfile`: `web: uvicorn main:app --host 0.0.0.0 --port $PORT`
-- `main.py` boots FastAPI and spawns `runner.main()` in a daemon thread on startup, so Render keeps the web service alive on the HTTP port while the runner loop polls `/api/public/runner-next` every 5s.
-- Render env vars required: `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`. Optional: `QSERVE_APP_URL` (defaults to `https://automate-qserve.lovable.app`).
+```python
+TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
+    "login_logout": LOGIN_LOGOUT,
+    "product_deletion": PRODUCT_DELETION,
+}
+```
 
-Liveness check: `https://qserve-test-manager.onrender.com/health` returns `runner.last_poll_at`, `last_job_id`, `last_step`, `last_heartbeat_at`. If `last_poll_at` keeps advancing, the runner is alive and consuming the endpoints.
+No changes to existing login/QR steps or to `LOGIN_LOGOUT`.
 
-## Optional improvement (only if you want it)
+## 2. src/lib/qserve-config.ts
 
-Add a small **Runner status** card to the dashboard that fetches Render's `/health` every ~10s and shows a green/red dot plus "last poll Xs ago". Files touched:
+Add the `product_deletion` entry to `TEST_CASES` with the exact 15 step
+labels, in the same order as the Python step list, so the live progress and
+results pages label each step correctly.
 
-- `src/lib/qserve.functions.ts` — new `getRunnerHealth` server fn that fetches `${process.env.RENDER_URL}/health` (or a hardcoded `https://qserve-test-manager.onrender.com/health`) and returns the JSON.
-- `src/components/qserve/RunnerStatus.tsx` — new component, polls every 10s via `useQuery`, renders pill on the index page.
-- `src/routes/index.tsx` — mount the pill next to the existing header.
+## Verification after wiring
 
-No backend or runner changes. Tell me yes/no on this widget and I'll build it.
+- The dashboard test-case dropdown lists both "Login → Logout" (21 steps)
+  and "Product Deletion (Clear Cart)" (15 steps); `listTestCases` derives the
+  count from the labels array.
+- A `product_deletion` run stores `steps_total = 15` and its 15 step names,
+  so the results page renders the correct step table.
+- Build check for TypeScript/route errors.
+
+## Notes carried over from the add-on file
+
+- The swipe coordinates and `instance(17)` selector are absolute and were
+  captured on one device resolution; they may not hold on every device in the
+  list (especially the Tab S9). Copied verbatim as requested.
+- The test assumes the cart already has items; `clear_entire_cart` raises
+  "No category rows found — cart was already empty" when nothing is present,
+  so an empty cart shows as a clear FAIL rather than a silent pass.
