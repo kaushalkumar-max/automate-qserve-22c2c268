@@ -1349,9 +1349,546 @@ PRODUCT_DELETION = [
 ]
 
 
+
+
+# TimeoutException is not imported at the top of runner.py yet.
+from selenium.common.exceptions import TimeoutException
+
+# ---------- Search functionality: config ----------
+
+SEARCH_TERM = "bfk_hexon"
+SEARCH_UPPER = SEARCH_TERM.upper()          # "BFK_HEXON" — matches the result row
+
+ROUND_1_VALUE = "1"
+ROUND_2_VALUE = "2"
+
+SF_LOGOUT_TIMEOUT = 30      # hard cap — give up after this many seconds
+SF_LOGOUT_POLL = 0.5        # how often to check whether Logout has appeared
+SF_LOGOUT_COORD = None      # last-resort coordinate tap, e.g. (540, 1850); None = skip
+
+# Coordinate fallbacks (1080-wide device) — only used if every locator fails
+SEARCH_BOX_HOME_XY = (540, 472)    # search bar on the home screen  [42,396][1038,549]
+SEARCH_BOX_BOYS_XY = (540, 362)    # search bar on the Boys screen  [21,286][1059,438]
+SEARCH_RESULT_XY = (540, 500)      # first result row               [0,415][1080,585]
+SF_HOME_BTN_XY = (540, 2221)       # floating Home button on the product screen
+SF_NAV_CATALOGUE_XY = (888, 2219)
+SF_NAV_CART_XY = (935, 2219)
+SF_TICK_KEY_XY = (248, 2360)       # keyboard dismiss tick
+SF_PLUS_BTN_XY = (887, 1919)       # "+" button fallback
+SF_ADD_TO_CART_XY = (679, 2360)    # "Add to cart" fallback
+
+
+# ---------- Search functionality: generic helpers ----------
+
+def sf_tap_absolute(driver, x, y):
+    """Tap at exact pixel coordinate."""
+    driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+
+
+def sf_tap_element_center(driver, el):
+    """Tap the centre of an element by gesture — works even when clickable=false."""
+    loc, size = el.location, el.size
+    x = int(loc["x"] + size["width"] / 2)
+    y = int(loc["y"] + size["height"] / 2)
+    driver.execute_script("mobile: clickGesture", {"x": x, "y": y})
+    return x, y
+
+
+def sf_find_any(driver, locators, timeout=6, poll=0.2):
+    """
+    Poll ALL locators in a round-robin until one resolves, sharing a single
+    timeout budget, so a dead fallback costs ~50ms instead of a full timeout.
+    Returns (element, locator) or (None, None).
+    """
+    end = time.time() + timeout
+    while True:
+        for by, val in locators:
+            try:
+                els = driver.find_elements(by, val)
+            except Exception:
+                continue
+            for el in els:
+                try:
+                    if el.is_displayed() and el.is_enabled():
+                        return el, (by, val)
+                except Exception:
+                    continue
+        if time.time() >= end:
+            return None, None
+        time.sleep(poll)
+
+
+def sf_click_first(driver, locators, timeout=6, label=""):
+    """Click the first locator that resolves. Returns the locator used, or None."""
+    start = time.time()
+    el, used = sf_find_any(driver, locators, timeout=timeout)
+    if el is None:
+        return None
+    try:
+        el.click()
+    except Exception:
+        sf_tap_element_center(driver, el)   # non-clickable node — tap its centre
+    if label:
+        print(f"     [ok] {label} found in {time.time() - start:.1f}s "
+              f"via: {str(used[1])[:55]}")
+    return used
+
+
+# ---------- Search functionality: search helpers ----------
+
+def sf_type_text(driver, text):
+    """
+    Type into the focused field.
+
+    Replaces the local script's `adb shell input text`, which cannot reach a
+    BrowserStack device from the runner host. Order of attempts:
+      1. the focused EditText (set_value, then send_keys)
+      2. mobile: type (UiAutomator2 driver command)
+      3. adb, only if a local device happens to be reachable
+    """
+    boxes = []
+    try:
+        boxes = driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
+    except Exception:
+        pass
+
+    for box in boxes:
+        for writer in ("set_value", "send_keys"):
+            try:
+                if writer == "set_value":
+                    box.set_value(text)
+                else:
+                    box.send_keys(text)
+                try:
+                    current = (box.get_attribute("text") or box.text or "").strip()
+                except Exception:
+                    current = text
+                if text.lower() in current.lower():
+                    print(f"     [ok] Typed '{text}' via EditText.{writer}")
+                    return True
+            except Exception:
+                continue
+
+    try:
+        driver.execute_script("mobile: type", {"text": text})
+        print(f"     [ok] Typed '{text}' via mobile: type")
+        return True
+    except Exception:
+        pass
+
+    try:
+        import subprocess
+        subprocess.run(["adb", "shell", "input", "text", text.replace(" ", "%s")],
+                       check=True, timeout=20)
+        print(f"     [ok] Typed '{text}' via adb")
+        return True
+    except Exception:
+        pass
+
+    raise RuntimeError(f"Could not type '{text}' into the search box")
+
+
+def sf_open_search_box(driver, coord_fallback, extra_locators=()):
+    """
+    Tap the 'Search by product code' bar.
+    The element reports clickable=false on the home screen, so if a normal
+    .click() doesn't take, tap its centre by gesture instead.
+    """
+    locators = [
+        (AppiumBy.ACCESSIBILITY_ID, "Search by product code"),
+        (AppiumBy.XPATH,
+         '//android.widget.ImageView[@content-desc="Search by product code"]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().description("Search by product code")'),
+    ] + list(extra_locators)
+
+    start = time.time()
+    el, used = sf_find_any(driver, locators, timeout=6)
+    if el is not None:
+        x, y = sf_tap_element_center(driver, el)
+        print(f"     [ok] Search bar tapped at ({x},{y}) in {time.time() - start:.1f}s "
+              f"via: {str(used[1])[:55]}")
+        return True
+
+    print(f"     [warn] All locators failed — tapping search bar at {coord_fallback}")
+    sf_tap_absolute(driver, *coord_fallback)
+    return False
+
+
+def sf_wait_for_keyboard(driver, timeout=6):
+    """Wait until an EditText is focused / the keyboard is up."""
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            if driver.is_keyboard_shown():
+                return True
+        except Exception:
+            pass
+        try:
+            if driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText"):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.3)
+    return False
+
+
+def sf_tap_search_result(driver):
+    """Tap the first result row returned for SEARCH_TERM."""
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         f'new UiSelector().className("android.widget.ImageView")'
+         f'.descriptionContains("{SEARCH_UPPER}")'),
+        (AppiumBy.XPATH,
+         f'//android.widget.ImageView[contains(@content-desc,"{SEARCH_UPPER}")]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         f'new UiSelector().descriptionContains("{SEARCH_UPPER}")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.ImageView").instance(0)'),
+    ]
+    start = time.time()
+    el, used = sf_find_any(driver, locators, timeout=8)
+    if el is not None:
+        sf_tap_element_center(driver, el)
+        print(f"     [ok] Result row tapped in {time.time() - start:.1f}s "
+              f"via: {str(used[1])[:55]}")
+        return True
+
+    print(f"     [warn] Result locators failed — tapping {SEARCH_RESULT_XY}")
+    sf_tap_absolute(driver, *SEARCH_RESULT_XY)
+    return False
+
+
+def sf_search_product(driver, coord_fallback, extra_locators=()):
+    """Full search sub-flow: open search bar -> type -> tap first result."""
+    sf_open_search_box(driver, coord_fallback, extra_locators)
+    time.sleep(1.0)
+
+    if not sf_wait_for_keyboard(driver):
+        print("     [warn] Keyboard not detected — typing anyway")
+
+    sf_type_text(driver, SEARCH_TERM)
+    time.sleep(1.5)          # let the result list populate
+    sf_tap_search_result(driver)
+    time.sleep(1.2)
+
+
+# ---------- Search functionality: booking helpers ----------
+
+def sf_fill_sizes(driver, value):
+    """Fill EVERY size EditText with `value`, then dismiss the keyboard."""
+    try:
+        size_inputs = WebDriverWait(driver, 15).until(
+            EC.presence_of_all_elements_located(
+                (AppiumBy.CLASS_NAME, "android.widget.EditText")
+            )
+        )
+    except Exception:
+        size_inputs = []
+
+    entered = 0
+    for inp in size_inputs:
+        try:
+            inp.click()
+            inp.clear()
+            inp.set_value(value)
+            entered += 1
+            time.sleep(0.1)
+        except Exception:
+            try:
+                inp.click()
+                inp.clear()
+                inp.send_keys(value)
+                entered += 1
+                time.sleep(0.1)
+            except Exception:
+                pass
+
+    time.sleep(0.2)
+
+    tick_locators = [
+        (AppiumBy.XPATH, '//*[@content-desc="Dismiss"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Dismiss"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Dismiss")'),
+        (AppiumBy.XPATH, '//android.view.View[@content-desc="Dismiss"]'),
+    ]
+    if sf_click_first(driver, tick_locators, timeout=2):
+        print("     [ok] Keyboard dismissed via Dismiss button")
+    else:
+        print(f"     [warn] Dismiss button not found — tapping tick key at {SF_TICK_KEY_XY}")
+        sf_tap_absolute(driver, *SF_TICK_KEY_XY)
+
+    time.sleep(0.3)
+    return entered
+
+
+def sf_tap_plus(driver):
+    plus_locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").text("+")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.XPATH,
+         '(//android.view.View[@content-desc="0"])[1]/android.widget.Button[2]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(0)'),
+    ]
+    if not sf_click_first(driver, plus_locators, timeout=2, label="'+'"):
+        print(f"     [warn] All locators failed — tapping + at {SF_PLUS_BTN_XY}")
+        sf_tap_absolute(driver, *SF_PLUS_BTN_XY)
+    time.sleep(0.5)
+
+
+def sf_tap_add_to_cart(driver):
+    cart_locators = [
+        (AppiumBy.XPATH, '//android.widget.ImageView[@content-desc="Add to cart"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Add to cart"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Add to cart")'),
+    ]
+    if not sf_click_first(driver, cart_locators, timeout=8, label="'Add to cart'"):
+        print(f"     [warn] All locators failed — tapping Add to cart at {SF_ADD_TO_CART_XY}")
+        sf_tap_absolute(driver, *SF_ADD_TO_CART_XY)
+    time.sleep(0.8)
+
+
+def sf_tap_home_button(driver):
+    """
+    Tap the floating Home button shown on the product screen after 'Add to cart'.
+    This is an android.widget.Button (NOT the nav_home ImageView) —
+    confirmed at bounds [466,2148][614,2295].
+    """
+    home_locators = [
+        (AppiumBy.XPATH,
+         "//android.widget.FrameLayout[@resource-id='android:id/content']"
+         "/android.widget.FrameLayout/android.view.View/android.view.View"
+         "/android.view.View/android.view.View/android.widget.Button"),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(0)'),
+        (AppiumBy.ACCESSIBILITY_ID, "Home"),
+        (AppiumBy.ACCESSIBILITY_ID, "Home Tab"),
+    ]
+    if not sf_click_first(driver, home_locators, timeout=5, label="Home button"):
+        print(f"     [warn] All locators failed — tapping Home at {SF_HOME_BTN_XY}")
+        sf_tap_absolute(driver, *SF_HOME_BTN_XY)
+    time.sleep(0.8)
+
+
+def sf_tap_nav(driver, res_id, acc_names, coord, label):
+    """Tap a bottom-nav icon by resource-id, with accessibility-id + coordinate fallbacks."""
+    locators = [
+        (AppiumBy.ID, res_id),
+        (AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().resourceId("{res_id}")'),
+        (AppiumBy.XPATH, f'//android.widget.ImageView[@resource-id="{res_id}"]'),
+    ] + [(AppiumBy.ACCESSIBILITY_ID, n) for n in acc_names]
+
+    if not sf_click_first(driver, locators, timeout=5, label=label):
+        print(f"     [warn] All locators failed — tapping {label} at {coord}")
+        sf_tap_absolute(driver, *coord)
+    time.sleep(0.9)
+
+
+def sf_smart_logout(driver, timeout=SF_LOGOUT_TIMEOUT, poll=SF_LOGOUT_POLL):
+    """
+    Poll for the Logout button and click it THE MOMENT it appears, instead of
+    blindly sleeping 30s after Submit. Returns elapsed seconds; raises if it
+    never shows.
+    """
+    locators = [
+        (AppiumBy.ACCESSIBILITY_ID, "Logout"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Logout")'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Logout")'),
+    ]
+    start = time.time()
+    next_tick = 5.0
+
+    print(f"     [..] Polling for Logout every {poll}s (max {timeout}s)...")
+    while (time.time() - start) < timeout:
+        for by, val in locators:
+            try:
+                el = driver.find_element(by, val)
+                if el.is_displayed():
+                    el.click()
+                    elapsed = time.time() - start
+                    print(f"     [ok] Logout appeared after {elapsed:.1f}s — clicked")
+                    return elapsed
+            except Exception:
+                continue
+
+        elapsed = time.time() - start
+        if elapsed >= next_tick:
+            print(f"        ...still saving ({elapsed:.0f}s elapsed)")
+            next_tick += 5.0
+        time.sleep(poll)
+
+    if SF_LOGOUT_COORD:
+        print(f"     [warn] Logout not found in {timeout}s — tapping {SF_LOGOUT_COORD}")
+        sf_tap_absolute(driver, *SF_LOGOUT_COORD)
+        return time.time() - start
+
+    raise TimeoutException(
+        f"Logout button did not appear within {timeout}s "
+        f"(set SF_LOGOUT_COORD for a coordinate fallback)"
+    )
+
+
+# ---------- Search functionality: steps ----------
+# Steps 1-8 (login) are the existing hardened runner.py steps, reused below in
+# the SEARCH_FUNCTIONALITY list. These are steps 9-25.
+
+def step_sf_search_home(driver):
+    """Your Step 08 — search from the home screen."""
+    sf_search_product(driver, SEARCH_BOX_HOME_XY)
+
+
+def step_sf_sizes_round1(driver):
+    """Your Step 09 — all size boxes = 1."""
+    entered = sf_fill_sizes(driver, ROUND_1_VALUE)
+    if entered == 0:
+        raise RuntimeError("No EditText size fields found (round 1)")
+    print(f"     [ok] Round 1: {entered} boxes set to '{ROUND_1_VALUE}'")
+
+
+def step_sf_plus_round1(driver):
+    """Your Step 10 — non-fatal in the original script, kept non-fatal here."""
+    try:
+        sf_tap_plus(driver)
+    except Exception as e:
+        print(f"     [warn] '+' round 1 failed, continuing (non-fatal): {e}")
+
+
+def step_sf_add_to_cart_round1(driver):
+    """Your Step 11."""
+    sf_tap_add_to_cart(driver)
+
+
+def step_sf_home_after_round1(driver):
+    """Your Step 12."""
+    sf_tap_home_button(driver)
+
+
+def step_sf_catalogue(driver):
+    """Your Step 13."""
+    sf_tap_nav(driver, "nav_catalogue", ["Catalogue", "Catalogue Tab"],
+               SF_NAV_CATALOGUE_XY, "Catalogue")
+
+
+def step_sf_brand_boys(driver):
+    """Your Step 14 — the tile's content-desc may carry the option count too."""
+    boys_locators = [
+        (AppiumBy.ACCESSIBILITY_ID, "Boys"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionStartsWith("Boys")'),
+        (AppiumBy.XPATH, '//android.view.View[starts-with(@content-desc,"Boys")]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Boys")'),
+    ]
+    if not sf_click_first(driver, boys_locators, timeout=6, label="'Boys' tile"):
+        raise RuntimeError("'Boys' tile not found by any locator")
+    time.sleep(1.0)
+
+
+def step_sf_search_boys(driver):
+    """Your Step 15 — the Boys-screen search bar exposes no content-desc."""
+    sf_search_product(
+        driver,
+        SEARCH_BOX_BOYS_XY,
+        extra_locators=[
+            (AppiumBy.XPATH,
+             '//android.widget.FrameLayout[@resource-id="android:id/content"]'
+             '/android.widget.FrameLayout/android.view.View/android.view.View'
+             '/android.view.View/android.view.View/android.widget.ImageView'),
+            (AppiumBy.ANDROID_UIAUTOMATOR,
+             'new UiSelector().className("android.widget.ImageView").instance(0)'),
+        ],
+    )
+
+
+def step_sf_sizes_round2(driver):
+    """Your Step 16 — all size boxes = 2."""
+    entered = sf_fill_sizes(driver, ROUND_2_VALUE)
+    if entered == 0:
+        raise RuntimeError("No EditText size fields found (round 2)")
+    print(f"     [ok] Round 2: {entered} boxes set to '{ROUND_2_VALUE}'")
+
+
+def step_sf_plus_round2(driver):
+    """Your Step 17 — non-fatal in the original script, kept non-fatal here."""
+    try:
+        sf_tap_plus(driver)
+    except Exception as e:
+        print(f"     [warn] '+' round 2 failed, continuing (non-fatal): {e}")
+
+
+def step_sf_add_to_cart_round2(driver):
+    """Your Step 18."""
+    sf_tap_add_to_cart(driver)
+
+
+def step_sf_home_after_round2(driver):
+    """Your Step 19."""
+    sf_tap_home_button(driver)
+
+
+def step_sf_cart_tab(driver):
+    """Your Step 20."""
+    sf_tap_nav(driver, "nav_cart", ["Cart", "Cart Tab"], SF_NAV_CART_XY, "Cart")
+
+
+def step_sf_save(driver):
+    """Your Step 21."""
+    WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "SAVE"))
+    ).click()
+    time.sleep(0.8)
+
+
+def step_sf_signature(driver):
+    """Your Step 22 — non-fatal in the original script, kept non-fatal here.
+    Uses runner.py's draw_signature(), which is identical to yours."""
+    try:
+        draw_signature(driver)
+    except Exception as e:
+        print(f"     [warn] Signature failed, continuing (non-fatal): {e}")
+
+
+def step_sf_submit(driver):
+    """Your Step 23."""
+    WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Submit"))
+    ).click()
+
+
+def step_sf_logout(driver):
+    """Your Step 24 — smart logout, polls instead of sleeping 30s."""
+    elapsed = sf_smart_logout(driver)
+    time.sleep(0.8)
+    print(f"     [ok] Logout tapped {elapsed:.1f}s after Submit")
+
+
+SEARCH_FUNCTIONALITY = [
+    # Login (reused hardened runner.py steps) — 8
+    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
+    step_done_picker, step_return_app, step_tap_login, step_wait_home,
+    # Round 1 — 4
+    step_sf_search_home, step_sf_sizes_round1, step_sf_plus_round1,
+    step_sf_add_to_cart_round1,
+    # Navigate back and search again — 4
+    step_sf_home_after_round1, step_sf_catalogue, step_sf_brand_boys,
+    step_sf_search_boys,
+    # Round 2 — 4
+    step_sf_sizes_round2, step_sf_plus_round2, step_sf_add_to_cart_round2,
+    step_sf_home_after_round2,
+    # Finalise — 5
+    step_sf_cart_tab, step_sf_save, step_sf_signature, step_sf_submit,
+    step_sf_logout,
+]   # 25 steps
+
+
+
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout": LOGIN_LOGOUT,
     "product_deletion": PRODUCT_DELETION,
+    "search_functionality": SEARCH_FUNCTIONALITY,
 }
 
 
