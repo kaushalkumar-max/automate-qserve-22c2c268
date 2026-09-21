@@ -1381,16 +1381,39 @@ SF_ADD_TO_CART_XY = (679, 2360)    # "Add to cart" fallback
 # ---------- Search functionality: generic helpers ----------
 
 def sf_tap_absolute(driver, x, y):
-    """Tap at exact pixel coordinate."""
-    driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+    """
+    Tap at exact pixel coordinate.
+    Do not reintroduce mobile: clickGesture as an unguarded call — BrowserStack's driver doesn't support it.
+
+    Your local script used `mobile: clickGesture`. BrowserStack's UiAutomator2
+    driver does NOT expose clickGesture (it offers dragGesture, longClickGesture,
+    doubleClickGesture, swipeGesture... but no plain clickGesture), so that call
+    raises UnknownMethodException on every device. W3C pointer actions are
+    universally supported and are what runner.py's own `tap_xy` already uses for
+    the two working test cases. clickGesture is still attempted first, so the
+    behaviour is identical anywhere it IS available (e.g. a local emulator).
+    """
+    try:
+        driver.execute_script("mobile: clickGesture", {"x": int(x), "y": int(y)})
+        return int(x), int(y)
+    except Exception:
+        pass
+    finger = PointerInput(interaction.POINTER_TOUCH, "finger")
+    actions = ActionBuilder(driver, mouse=finger)
+    actions.pointer_action.move_to_location(int(x), int(y))
+    actions.pointer_action.pointer_down()
+    actions.pointer_action.pause(0.1)
+    actions.pointer_action.pointer_up()
+    actions.perform()
+    return int(x), int(y)
 
 
 def sf_tap_element_center(driver, el):
-    """Tap the centre of an element by gesture — works even when clickable=false."""
+    """Tap the centre of an element — works even when clickable=false."""
     loc, size = el.location, el.size
     x = int(loc["x"] + size["width"] / 2)
     y = int(loc["y"] + size["height"] / 2)
-    driver.execute_script("mobile: clickGesture", {"x": x, "y": y})
+    sf_tap_absolute(driver, x, y)
     return x, y
 
 
@@ -1443,8 +1466,12 @@ def sf_type_text(driver, text):
     Replaces the local script's `adb shell input text`, which cannot reach a
     BrowserStack device from the runner host. Order of attempts:
       1. the focused EditText (set_value, then send_keys)
-      2. mobile: type (UiAutomator2 driver command)
-      3. adb, only if a local device happens to be reachable
+      2. `mobile: shell` running `input text` — this is the exact same
+         `input text` command your adb call ran, just routed through the
+         Appium driver instead of a local subprocess. BrowserStack's driver
+         DOES expose `shell` (it's first in the supported-command list, and
+         runner.py's existing scan_media() already uses it).
+      3. mobile: type (UiAutomator2 driver command)
     """
     boxes = []
     try:
@@ -1469,18 +1496,18 @@ def sf_type_text(driver, text):
             except Exception:
                 continue
 
+    safe = text.replace(" ", "%s")
     try:
-        driver.execute_script("mobile: type", {"text": text})
-        print(f"     [ok] Typed '{text}' via mobile: type")
+        driver.execute_script("mobile: shell",
+                              {"command": "input", "args": ["text", safe]})
+        print(f"     [ok] Typed '{text}' via mobile: shell input text")
         return True
     except Exception:
         pass
 
     try:
-        import subprocess
-        subprocess.run(["adb", "shell", "input", "text", text.replace(" ", "%s")],
-                       check=True, timeout=20)
-        print(f"     [ok] Typed '{text}' via adb")
+        driver.execute_script("mobile: type", {"text": text})
+        print(f"     [ok] Typed '{text}' via mobile: type")
         return True
     except Exception:
         pass
@@ -1882,9 +1909,6 @@ SEARCH_FUNCTIONALITY = [
     step_sf_cart_tab, step_sf_save, step_sf_signature, step_sf_submit,
     step_sf_logout,
 ]   # 25 steps
-
-
-
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout": LOGIN_LOGOUT,
     "product_deletion": PRODUCT_DELETION,
