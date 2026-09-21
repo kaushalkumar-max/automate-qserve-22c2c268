@@ -24,6 +24,22 @@ export const TEST_CASES: Record<string, TestCase> = {
       "Submit Order", "Wait for Order Save", "Tap Logout",
     ],
   },
+  search_functionality: {
+    key: "search_functionality",
+    name: "Search Functionality (Double Booking)",
+    steps: [
+      "Open App", "Tap Scan QR from Gallery", "Photo Picker Opens",
+      "Select QR Image", "Tap Done in Picker", "Return to App",
+      "Tap Login Button", "Wait for Home Screen",
+      "Search Product (Home)", "Fill Sizes Round 1 (= 1)",
+      "Tap Plus (Round 1)", "Add to Cart (Round 1)",
+      "Tap Home Button", "Open Catalogue Tab", "Select Boys Brand",
+      "Search Product (Boys)", "Fill Sizes Round 2 (= 2)",
+      "Tap Plus (Round 2)", "Add to Cart (Round 2)", "Tap Home Button",
+      "Open Cart Tab", "Tap SAVE", "Draw Signature", "Submit Order",
+      "Smart Logout",
+    ],
+  },
 };
 
 export const DEVICES: Device[] = [
