@@ -40,6 +40,22 @@ export const TEST_CASES: Record<string, TestCase> = {
       "Smart Logout",
     ],
   },
+  filter_functionality: {
+    key: "filter_functionality",
+    name: "Filter Functionality (Category + Sub-Category)",
+    steps: [
+      "Open App", "Tap Scan QR from Gallery", "Photo Picker Opens",
+      "Select QR Image", "Tap Done in Picker", "Return to App",
+      "Tap Login Button", "Wait for Home Screen",
+      "Open Catalogue Tab", "Select Boys Brand",
+      "Open Filter Panel", "Tick Category (Denim)",
+      "Open Sub-Category Tab", "Tick Sub-Category (Gymindigo)",
+      "Tap Apply Filters", "Open Filtered Result",
+      "Fill Quantity Fields", "Tap Plus Button", "Tap Add to Cart",
+      "Tap Home Button", "Open Cart Tab", "Tap SAVE", "Draw Signature",
+      "Submit Order", "Smart Logout",
+    ],
+  },
 };
 
 export const DEVICES: Device[] = [
