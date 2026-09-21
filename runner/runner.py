@@ -1909,10 +1909,309 @@ SEARCH_FUNCTIONALITY = [
     step_sf_cart_tab, step_sf_save, step_sf_signature, step_sf_submit,
     step_sf_logout,
 ]   # 25 steps
+
+
+# ---------- Filter functionality: config ----------
+
+CATEGORY_FILTER = "Denim"        # Category tab     — content-desc is "Denim \n55"
+SUBCATEGORY_FILTER = "Gymindigo"  # Sub-Category tab — content-desc is "Gymindigo \n2"
+PRODUCT_TO_BOOK = "BD_DARIANS"   # the result to open — content-desc is "BD_DARIANS\n2599"
+FLT_SIZE_VALUE = "1"             # quantity typed into every size box
+
+# Set True to FAIL the run when PRODUCT_TO_BOOK is missing from the filtered
+# grid, instead of opening whatever tile came first. See note above.
+FLT_STRICT_TARGET = False
+
+# Coordinate fallbacks (1080-wide device) — only used if every locator fails
+FLT_FILTER_BTN_XY = (1017, 181)    # filter icon on Boys   [954,118][1080,244]
+FLT_DENIM_CB_XY = (710, 619)       # "Denim" checkbox      [425,546][996,693]
+FLT_SUBCATEGORY_XY = (170, 632)    # Sub-Category tab      [0,551][341,714]
+FLT_SUBCAT_CB_XY = None            # no coordinate fallback for the sub-category box
+FLT_APPLY_FILTERS_XY = (844, 2215)  # Apply Filters button  [660,2145][1028,2285]
+FLT_FIRST_PRODUCT_XY = (265, 790)  # 1st result tile       [0,459][530,1121]
+
+# SF_HOME_BTN_XY, SF_NAV_CATALOGUE_XY, SF_NAV_CART_XY, SF_TICK_KEY_XY,
+# SF_PLUS_BTN_XY and SF_ADD_TO_CART_XY are already defined by the search
+# functionality block and are reused as-is.
+
+
+# ---------- Filter functionality: filter-panel helpers ----------
+
+def flt_tap_filter_icon(driver):
+    """
+    Top-right filter icon on the brand screen.
+    An unlabelled android.widget.Button — the 2nd Button in the header
+    (instance(1)), bounds [954,118][1080,244].
+    """
+    locators = [
+        (AppiumBy.XPATH,
+         '//android.widget.FrameLayout[@resource-id="android:id/content"]'
+         '/android.widget.FrameLayout/android.view.View/android.view.View'
+         '/android.view.View/android.view.View/android.view.View[1]'
+         '/android.widget.Button[2]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         'new UiSelector().className("android.widget.Button").instance(1)'),
+        (AppiumBy.ACCESSIBILITY_ID, "Filters"),
+    ]
+    if not sf_click_first(driver, locators, timeout=6, label="Filter icon"):
+        print(f"     [warn] All locators failed — tapping Filter at {FLT_FILTER_BTN_XY}")
+        sf_tap_absolute(driver, *FLT_FILTER_BTN_XY)
+    time.sleep(1.2)
+
+
+def flt_swipe_list_up(driver, ratio=0.5):
+    """
+    Scroll the filter list. Flutter lists aren't UiScrollable, so swipe.
+    swipeGesture IS supported by BrowserStack's driver; the W3C pointer
+    fallback underneath covers anything that isn't.
+    """
+    s = driver.get_window_size()
+    w, h = s["width"], s["height"]
+    top, bottom = int(h * 0.30), int(h * 0.80)
+    try:
+        driver.execute_script("mobile: swipeGesture", {
+            "left": int(w * 0.35), "top": top,
+            "width": int(w * 0.6), "height": bottom - top,
+            "direction": "up", "percent": ratio, "speed": 1200,
+        })
+    except Exception:
+        touch = PointerInput(interaction.POINTER_TOUCH, "finger")
+        a = ActionBuilder(driver, mouse=touch)
+        a.pointer_action.move_to_location(int(w * 0.7), bottom)
+        a.pointer_action.pointer_down()
+        a.pointer_action.move_to_location(int(w * 0.7), top)
+        a.pointer_action.release()
+        a.perform()
+    time.sleep(0.8)
+
+
+def flt_tick_checkbox(driver, name, coord=None, max_scrolls=4):
+    """
+    Tick a filter checkbox by its label, scrolling the list if it's below the fold.
+
+    The content-desc carries the count on a second line ("Denim \\n55",
+    "Gymindigo \\n2"), so an exact match on the label alone misses — the
+    prefix/contains locators cover both shapes and survive the count changing
+    as stock moves.
+    Returns the checkbox's 'checked' attribute afterwards, or None.
+    """
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         f'new UiSelector().className("android.widget.CheckBox")'
+         f'.descriptionStartsWith("{name}")'),
+        (AppiumBy.XPATH,
+         f'//android.widget.CheckBox[starts-with(@content-desc,"{name}")]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         f'new UiSelector().descriptionStartsWith("{name}")'),
+    ]
+
+    el, used = sf_find_any(driver, locators, timeout=4)
+    scrolls = 0
+    while el is None and scrolls < max_scrolls:
+        scrolls += 1
+        print(f"     [..] '{name}' not visible — scrolling the list ({scrolls}/{max_scrolls})")
+        flt_swipe_list_up(driver)
+        el, used = sf_find_any(driver, locators, timeout=2)
+
+    if el is None:
+        if coord:
+            print(f"     [warn] '{name}' checkbox not found — tapping {coord}")
+            sf_tap_absolute(driver, *coord)
+            time.sleep(0.8)
+            return None
+        raise RuntimeError(f"'{name}' checkbox not found after {max_scrolls} scroll(s)")
+
+    try:
+        el.click()
+    except Exception:
+        sf_tap_element_center(driver, el)
+    print(f"     [ok] '{name}' checkbox tapped via: {str(used[1])[:55]}")
+    time.sleep(0.8)
+
+    # Confirm it actually toggled rather than assuming the tap landed
+    try:
+        el2, _ = sf_find_any(driver, locators, timeout=3)
+        state = el2.get_attribute("checked") if el2 is not None else None
+        print(f"     [..] '{name}' checked = {state}")
+        return state
+    except Exception:
+        return None
+
+
+def flt_tap_subcategory_tab(driver):
+    locators = [
+        (AppiumBy.ACCESSIBILITY_ID, "Sub-Category"),
+        (AppiumBy.XPATH, '//android.widget.Button[@content-desc="Sub-Category"]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Sub-Category")'),
+    ]
+    if not sf_click_first(driver, locators, timeout=6, label="'Sub-Category' tab"):
+        print(f"     [warn] All locators failed — tapping Sub-Category at {FLT_SUBCATEGORY_XY}")
+        sf_tap_absolute(driver, *FLT_SUBCATEGORY_XY)
+    time.sleep(1.0)
+
+
+def flt_tap_apply_filters(driver):
+    locators = [
+        (AppiumBy.ACCESSIBILITY_ID, "Apply Filters"),
+        (AppiumBy.XPATH, '//android.widget.Button[@content-desc="Apply Filters"]'),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().description("Apply Filters")'),
+    ]
+    if not sf_click_first(driver, locators, timeout=6, label="'Apply Filters'"):
+        print(f"     [warn] All locators failed — tapping Apply Filters at {FLT_APPLY_FILTERS_XY}")
+        sf_tap_absolute(driver, *FLT_APPLY_FILTERS_XY)
+    time.sleep(1.5)
+
+
+def flt_open_result(driver, target=PRODUCT_TO_BOOK):
+    """
+    Open `target` from the filtered grid.
+
+    Can't use ImageView.instance(0) — that's the search bar. A product tile is
+    an ImageView carrying a content-desc ("BD_DARIANS\\n2599"), so collect the
+    labelled ones, take the one matching `target`, and fall back to the
+    topmost-leftmost tile if the name isn't among them.
+    Returns (result_count, name_opened).
+    """
+    end = time.time() + 8
+    tiles = []
+    while time.time() < end:
+        tiles = []
+        try:
+            for el in driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.ImageView"):
+                try:
+                    desc = el.get_attribute("content-desc") or ""
+                    if not desc.strip() or "search by product code" in desc.lower():
+                        continue
+                    if not el.is_displayed():
+                        continue
+                    loc = el.location
+                    tiles.append((loc["y"], loc["x"], el, desc))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        if tiles:
+            break
+        time.sleep(0.4)
+
+    if not tiles:
+        if FLT_STRICT_TARGET:
+            raise RuntimeError(
+                "No labelled product tile found after applying filters")
+        print(f"     [warn] No labelled tile found — tapping {FLT_FIRST_PRODUCT_XY}")
+        sf_tap_absolute(driver, *FLT_FIRST_PRODUCT_XY)
+        time.sleep(1.5)
+        return 0, "unknown"
+
+    tiles.sort(key=lambda t: (t[0], t[1]))
+    names = [t[3].splitlines()[0] if t[3].splitlines() else t[3] for t in tiles]
+    print(f"     [..] {len(tiles)} result(s) after filtering: {names}")
+
+    match = next((t for t in tiles if t[3].upper().startswith(target.upper())), None)
+    if match is None:
+        if FLT_STRICT_TARGET:
+            raise RuntimeError(
+                f"'{target}' not in the filtered results — got {names}. "
+                f"The filter may not have applied.")
+        match = tiles[0]
+        print(f"     [warn] '{target}' not among the results — opening '{names[0]}' instead")
+
+    _, _, el, desc = match
+    sf_tap_element_center(driver, el)
+    opened = desc.splitlines()[0] if desc.splitlines() else desc
+    print(f"     [ok] Opened: {opened}")
+    time.sleep(1.5)
+    return len(tiles), opened
+
+
+# ---------- Filter functionality: steps ----------
+# Steps 1-8 (login), 9-10 (Catalogue, Boys) and 21-25 (cart, SAVE, signature,
+# Submit, logout) reuse existing runner.py / sf_* steps — see the list below.
+# These are the filter-specific ones.
+
+def step_flt_filter_icon(driver):
+    """Your Step 10."""
+    flt_tap_filter_icon(driver)
+
+
+def step_flt_tick_category(driver):
+    """Your Step 11 — tick 'Denim' under Category."""
+    state = flt_tick_checkbox(driver, CATEGORY_FILTER, FLT_DENIM_CB_XY)
+    print(f"     [ok] Category '{CATEGORY_FILTER}' ticked (checked={state})")
+
+
+def step_flt_subcategory_tab(driver):
+    """Your Step 12."""
+    flt_tap_subcategory_tab(driver)
+
+
+def step_flt_tick_subcategory(driver):
+    """Your Step 13 — tick 'Gymindigo' under Sub-Category.
+    No coordinate fallback here by design, so a miss is a clear FAIL."""
+    state = flt_tick_checkbox(driver, SUBCATEGORY_FILTER, FLT_SUBCAT_CB_XY)
+    print(f"     [ok] Sub-Category '{SUBCATEGORY_FILTER}' ticked (checked={state})")
+
+
+def step_flt_apply_filters(driver):
+    """Your Step 14."""
+    flt_tap_apply_filters(driver)
+
+
+def step_flt_open_result(driver):
+    """Your Step 15 — open the target product from the filtered grid."""
+    count, name = flt_open_result(driver)
+    print(f"     [ok] Result opened ({name}, {count} result(s) after filtering)")
+
+
+def step_flt_sizes(driver):
+    """Your Step 16 — every size box = 1."""
+    entered = sf_fill_sizes(driver, FLT_SIZE_VALUE)
+    if entered == 0:
+        raise RuntimeError("No EditText size fields found")
+    print(f"     [ok] {entered} boxes set to '{FLT_SIZE_VALUE}'")
+
+
+def step_flt_plus(driver):
+    """Your Step 17 — non-fatal in the original script, kept non-fatal here."""
+    try:
+        sf_tap_plus(driver)
+    except Exception as e:
+        print(f"     [warn] '+' failed, continuing (non-fatal): {e}")
+
+
+def step_flt_add_to_cart(driver):
+    """Your Step 18."""
+    sf_tap_add_to_cart(driver)
+
+
+def step_flt_home(driver):
+    """Your Step 19."""
+    sf_tap_home_button(driver)
+
+
+FILTER_FUNCTIONALITY = [
+    # Login (reused hardened runner.py steps) — 8
+    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
+    step_done_picker, step_return_app, step_tap_login, step_wait_home,
+    # Catalogue -> Boys (reused from the search case) — 2
+    step_sf_catalogue, step_sf_brand_boys,
+    # Filter panel — 5
+    step_flt_filter_icon, step_flt_tick_category, step_flt_subcategory_tab,
+    step_flt_tick_subcategory, step_flt_apply_filters,
+    # Book the filtered result — 5
+    step_flt_open_result, step_flt_sizes, step_flt_plus,
+    step_flt_add_to_cart, step_flt_home,
+    # Finalise (reused from the search case) — 5
+    step_sf_cart_tab, step_sf_save, step_sf_signature, step_sf_submit,
+    step_sf_logout,
+]   # 25 steps
+
+
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout": LOGIN_LOGOUT,
     "product_deletion": PRODUCT_DELETION,
     "search_functionality": SEARCH_FUNCTIONALITY,
+    "filter_functionality": FILTER_FUNCTIONALITY,
 }
 
 
