@@ -2207,11 +2207,723 @@ FILTER_FUNCTIONALITY = [
 ]   # 25 steps
 
 
+# ---------- Catalogue order: config ----------
+
+CAT_QTY_VALUE = "3"        # quantity typed into every size box
+CAT_PRODUCT_INDEX = 1      # 0 = first card, 1 = second card in the category
+
+# Set True to assert the cart is empty after re-login (see note above)
+CAT_ASSERT_CART_EMPTY_AFTER_RELOGIN = False
+
+CAT_CATALOGUE_TAB_SELECTOR = 'new UiSelector().resourceId("nav_catalogue")'
+CAT_CART_TAB_SELECTOR = 'new UiSelector().resourceId("nav_cart")'
+CAT_TAP_X, CAT_TAP_Y = 940, 2234     # centre of nav_cart on this device
+
+CAT_CATEGORY_NAME = "Boys"
+CAT_CO_ORDINATES_DESC = "Co-Ordinates"
+CAT_ADD_TO_CART_DESC = "Add to cart"
+CAT_YES_BUTTON_DESC = "Yes"
+CAT_TILE_SELECTOR = 'new UiSelector().className("android.widget.ImageView")'
+CAT_EDITTEXT_SELECTOR = 'new UiSelector().className("android.widget.EditText")'
+CAT_BUTTON_SELECTOR = 'new UiSelector().className("android.widget.Button")'
+CAT_EMPTY_CART_TEXT = "Your Cart is Empty"
+
+
+# ---------- Catalogue order: generic helpers ----------
+
+def cat_swipe_screen(driver, direction="up", ratio=0.6):
+    """Scroll the screen. Flutter lists are not UiScrollable, so this uses
+    a plain swipe gesture over the middle of the screen."""
+    s = driver.get_window_size()
+    w, h = s["width"], s["height"]
+    x = int(w * 0.5)
+    top, bottom = int(h * 0.25), int(h * 0.80)
+    span = int((bottom - top) * ratio)
+    if direction == "up":          # content moves up = see lower items
+        y1, y2 = bottom, bottom - span
+    else:
+        y1, y2 = top, top + span
+    try:
+        driver.execute_script("mobile: swipeGesture", {
+            "left": int(w * 0.1), "top": top,
+            "width": int(w * 0.8), "height": bottom - top,
+            "direction": direction, "percent": 0.75, "speed": 1200,
+        })
+    except Exception:
+        touch = PointerInput(interaction.POINTER_TOUCH, "finger")
+        a = ActionBuilder(driver, mouse=touch)
+        a.pointer_action.move_to_location(x, y1)
+        a.pointer_action.pointer_down()
+        a.pointer_action.move_to_location(x, y2)
+        a.pointer_action.release()
+        a.perform()
+    time.sleep(0.8)
+
+
+def cat_find_scrolling(driver, by, value, max_swipes=8):
+    """Find an element, scrolling down (then back up) if needed."""
+    elems = driver.find_elements(by, value)
+    if elems:
+        return elems[0]
+    for _ in range(max_swipes):
+        cat_swipe_screen(driver, "up")
+        elems = driver.find_elements(by, value)
+        if elems:
+            return elems[0]
+    for _ in range(max_swipes):
+        cat_swipe_screen(driver, "down")
+        elems = driver.find_elements(by, value)
+        if elems:
+            return elems[0]
+    return None
+
+
+def cat_force_tap(driver, elem):
+    """
+    Tap an element even when it reports clickable=false. Flutter buttons
+    usually respond to a coordinate tap, so that is tried first.
+
+    clickGesture is attempted ahead of the W3C tap so local runs behave
+    identically, but BrowserStack rejects it, so the coordinate tap below is
+    what actually runs there — which is the order your docstring intended.
+    """
+    errors = []
+    try:
+        r = elem.rect
+        cx = int(r["x"] + r["width"] / 2)
+        cy = int(r["y"] + r["height"] / 2)
+    except Exception as e:
+        errors.append(f"rect: {e}")
+        cx = cy = None
+
+    if cx is not None:
+        try:
+            driver.execute_script("mobile: clickGesture", {"x": cx, "y": cy})
+            return f"clickGesture ({cx},{cy})"
+        except Exception as e:
+            errors.append(f"clickGesture: {e}")
+        try:
+            touch = PointerInput(interaction.POINTER_TOUCH, "finger")
+            a = ActionBuilder(driver, mouse=touch)
+            a.pointer_action.move_to_location(cx, cy)
+            a.pointer_action.pointer_down()
+            a.pointer_action.pause(0.12)
+            a.pointer_action.release()
+            a.perform()
+            return f"touch tap ({cx},{cy})"
+        except Exception as e:
+            errors.append(f"touch: {e}")
+
+    try:
+        elem.click()
+        return "click"
+    except Exception as e:
+        errors.append(f"click: {e}")
+
+    try:
+        parent = elem.find_element(AppiumBy.XPATH, "./ancestor::*[@clickable='true'][1]")
+        parent.click()
+        return "parent click"
+    except Exception as e:
+        errors.append(f"parent: {e}")
+
+    raise RuntimeError("; ".join(errors))
+
+
+def cat_tap_with_retry(driver, by, value, label, attempts=6, settle=1.5):
+    """Find (scrolling if needed) and tap, using every tap method available."""
+    last_err = None
+    for _ in range(attempts):
+        try:
+            elem = cat_find_scrolling(driver, by, value)
+            if elem is None:
+                last_err = "not found even after scrolling"
+                time.sleep(1)
+                continue
+            how = cat_force_tap(driver, elem)
+            print(f"     tapped {label} via {how}")
+            time.sleep(settle)
+            return
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+    raise RuntimeError(f"{label} not found or not tappable: {last_err}")
+
+
+def cat_dismiss_keyboard(driver):
+    """Close only the keyboard. Does NOT tap 'Dismiss': in Flutter that is the
+    popup's background barrier, and tapping it closes the edit popup unsaved."""
+    try:
+        if driver.is_keyboard_shown():
+            driver.hide_keyboard()
+            time.sleep(0.8)
+    except Exception:
+        pass
+
+
+def cat_wait_for_login_screen(driver, timeout=25):
+    """After logout, wait for the QR login screen instead of a blind sleep."""
+    el, _ = sf_find_any(
+        driver, [(AppiumBy.ACCESSIBILITY_ID, "Scan QR from gallery")],
+        timeout=timeout
+    )
+    if el is None:
+        print("     [warn] Login screen not detected — continuing anyway")
+        return False
+    return True
+
+
+# ---------- Catalogue order: product / quantity / ratio helpers ----------
+
+def cat_get_product_cards(driver):
+    """Product cards on screen, ordered topmost then leftmost.
+    A card's content-desc is 'name<newline>price'; cards without a price are
+    used only if no card on screen has one."""
+    with_price, without_price = [], []
+    for elem in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_TILE_SELECTOR):
+        try:
+            desc = (elem.get_attribute("content-desc") or "").strip()
+            if not desc:
+                continue
+            r = elem.rect
+            if r["y"] < 200 or r["height"] < 100:
+                continue                       # nav icons, headers
+            last_line = desc.split("\n")[-1].replace(",", "").strip()
+            if last_line.replace(".", "").isdigit():
+                with_price.append((r["y"], r["x"], elem, desc))
+            else:
+                without_price.append((r["y"], r["x"], elem, desc))
+        except Exception:
+            continue
+    cards = with_price or without_price
+    cards.sort(key=lambda c: (c[0], c[1]))
+    return cards
+
+
+def cat_find_first_list_item(driver):
+    """First row of a list screen: a clickable ImageView with a one-line name."""
+    rows = []
+    for elem in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_TILE_SELECTOR):
+        try:
+            desc = (elem.get_attribute("content-desc") or "").strip()
+            if not desc or "\n" in desc:
+                continue
+            if (elem.get_attribute("clickable") or "") != "true":
+                continue
+            r = elem.rect
+            if r["y"] < 300 or r["height"] < 80:
+                continue
+            rows.append((r["y"], r["x"], elem, desc))
+        except Exception:
+            continue
+    if not rows:
+        return None, None
+    rows.sort(key=lambda x: (x[0], x[1]))
+    return rows[0][2], rows[0][3]
+
+
+def cat_get_qty_boxes(driver):
+    """Quantity boxes as (hint, element), topmost then leftmost."""
+    boxes = []
+    for f in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_EDITTEXT_SELECTOR):
+        try:
+            r = f.rect
+            boxes.append((r["y"], r["x"], (f.get_attribute("hint") or "").strip(), f))
+        except Exception:
+            continue
+    boxes.sort(key=lambda b: (b[0], b[1]))
+    return [(b[2], b[3]) for b in boxes]
+
+
+def cat_fill_box(box, value):
+    """Type a value into one box and confirm it stuck."""
+    box.click()
+    time.sleep(0.4)
+    try:
+        box.clear()
+    except Exception:
+        pass
+    try:
+        box.set_value(value)
+    except Exception:
+        box.send_keys(value)
+    time.sleep(0.5)
+    return (box.get_attribute("text") or "").strip() == value
+
+
+def cat_find_ratio_buttons(driver):
+    """The -/+ pair in the ratio row: leftmost is -, rightmost is +."""
+    s = driver.get_window_size()
+    row = []
+    for btn in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_BUTTON_SELECTOR):
+        try:
+            r = btn.rect
+            if s["height"] * 0.55 < r["y"] < s["height"] * 0.88:
+                row.append((r["x"], btn))
+        except Exception:
+            continue
+    row.sort(key=lambda b: b[0])
+    return [b[1] for b in row]
+
+
+def cat_read_ratio_count(driver):
+    """Read the counter that sits between - and +."""
+    try:
+        for elem in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR,
+                                         'new UiSelector().className("android.view.View")'):
+            desc = (elem.get_attribute("content-desc") or "").strip()
+            if desc.isdigit() and elem.find_elements(
+                    AppiumBy.ANDROID_UIAUTOMATOR, CAT_BUTTON_SELECTOR):
+                return desc
+    except Exception:
+        pass
+    return None
+
+
+def cat_confirm_yes_if_present(driver, timeout=3):
+    """Tap 'Yes' if a confirmation popup appears. Returns True if it did."""
+    end = time.time() + timeout
+    while time.time() < end:
+        elems = driver.find_elements(AppiumBy.ACCESSIBILITY_ID, CAT_YES_BUTTON_DESC)
+        if elems:
+            try:
+                how = cat_force_tap(driver, elems[0])
+                print(f"     tapped 'Yes' via {how}")
+                time.sleep(1.5)
+                return True
+            except Exception:
+                pass
+        time.sleep(0.5)
+    return False
+
+
+# ---------- Catalogue order: cart helpers ----------
+
+def cat_cart_is_empty(driver):
+    """True if the cart screen shows the 'Your Cart is Empty' message."""
+    for val in [f'new UiSelector().descriptionContains("{CAT_EMPTY_CART_TEXT}")',
+                f'new UiSelector().textContains("{CAT_EMPTY_CART_TEXT}")',
+                'new UiSelector().descriptionContains("Cart is Empty")',
+                'new UiSelector().textContains("Cart is Empty")']:
+        try:
+            if driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, val):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def cat_read_total_qty(driver):
+    """Read the 'Total Qty: N' figure at the top of the cart. None if absent."""
+    for val in ['new UiSelector().textContains("Total Qty")',
+                'new UiSelector().descriptionContains("Total Qty")']:
+        try:
+            for elem in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, val):
+                raw = (elem.get_attribute("text") or
+                       elem.get_attribute("content-desc") or "")
+                digits = "".join(ch for ch in raw.split(":")[-1] if ch.isdigit())
+                if digits:
+                    return int(digits)
+        except Exception:
+            continue
+    return None
+
+
+def cat_cart_screen_open(driver):
+    """True if the cart screen is showing: the totals row, the SAVE button,
+    or the empty-cart message."""
+    try:
+        if cat_read_total_qty(driver) is not None:
+            return True
+        if driver.find_elements(AppiumBy.ACCESSIBILITY_ID, "SAVE"):
+            return True
+        if cat_cart_is_empty(driver):
+            return True
+        for val in ['new UiSelector().textContains("Total Amt")',
+                    'new UiSelector().descriptionContains("Total Amt")',
+                    'new UiSelector().textContains("Your Cart")',
+                    'new UiSelector().descriptionContains("Your Cart")']:
+            if driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, val):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def cat_find_last_nav_button(driver):
+    """The last (rightmost) icon in the bottom navigation bar — the Cart."""
+    s_ = driver.get_window_size()
+    row = []
+    for val in ['new UiSelector().className("android.widget.ImageView")',
+                'new UiSelector().className("android.widget.Button")']:
+        try:
+            for elem in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, val):
+                r = elem.rect
+                cy = r["y"] + r["height"] / 2
+                if cy > s_["height"] * 0.88 and r["height"] < s_["height"] * 0.12:
+                    row.append((r["x"], elem))
+        except Exception:
+            continue
+    if not row:
+        return None
+    row.sort(key=lambda b: b[0])
+    return row[-1][1]            # rightmost = Cart
+
+
+def cat_open_cart_tab(driver):
+    """Open the Cart tab. Taps nav_cart with force_tap; if that is not found,
+    taps the last icon in the bottom nav bar, then the nav bar coordinate as a
+    final fallback."""
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR, CAT_CART_TAB_SELECTOR),
+        (AppiumBy.ID, "nav_cart"),
+        (AppiumBy.XPATH, '//android.widget.ImageView[@resource-id="nav_cart"]'),
+        (AppiumBy.ACCESSIBILITY_ID, "Cart"),
+    ]
+    for attempt in range(3):
+        tab, how_found = None, ""
+        for by, val in locators:
+            try:
+                elems = driver.find_elements(by, val)
+                if elems:
+                    tab, how_found = elems[0], str(val)[:45]
+                    break
+            except Exception:
+                continue
+
+        if tab is None:
+            tab = cat_find_last_nav_button(driver)   # last button on the right
+            how_found = "last icon in the bottom nav"
+
+        if attempt > 0:                     # element tap did not work, use coordinates
+            print(f"     tapping Cart at ({CAT_TAP_X},{CAT_TAP_Y})")
+            sf_tap_absolute(driver, CAT_TAP_X, CAT_TAP_Y)
+        elif tab is not None:
+            try:
+                how = cat_force_tap(driver, tab)
+                print(f"     tapped Cart ({how_found}) via {how}")
+            except Exception as e:
+                print(f"     Cart tap failed: {e}")
+        else:
+            print(f"     no nav icon found - tapping ({CAT_TAP_X},{CAT_TAP_Y})")
+            sf_tap_absolute(driver, CAT_TAP_X, CAT_TAP_Y)
+
+        time.sleep(2)
+        if cat_cart_screen_open(driver):
+            return
+        print(f"     cart screen not open yet (attempt {attempt + 1}/3)")
+
+    raise RuntimeError("Cart tab tapped, but the cart screen did not open")
+
+
+# ---------- Catalogue order: steps ----------
+# Steps 1-8 and 28-35 (both logins) reuse the hardened runner.py steps.
+
+def step_cat_catalogue(driver):
+    """Your Step 09."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR,
+                       CAT_CATALOGUE_TAB_SELECTOR, "Catalogue tab (nav_catalogue)")
+
+
+def step_cat_category(driver):
+    """Your Step 10 — options count changes, so match the name only."""
+    cat = cat_find_scrolling(
+        driver, AppiumBy.ANDROID_UIAUTOMATOR,
+        f'new UiSelector().descriptionStartsWith("{CAT_CATEGORY_NAME}")', max_swipes=6)
+    if cat is None:
+        cat = cat_find_scrolling(
+            driver, AppiumBy.XPATH,
+            f'//*[starts-with(@content-desc,"{CAT_CATEGORY_NAME}")]', max_swipes=4)
+    if cat is None:
+        raise RuntimeError(
+            f"'{CAT_CATEGORY_NAME}' category not found even after scrolling")
+    desc = (cat.get_attribute("content-desc") or "").replace("\n", " ").strip()
+    how = cat_force_tap(driver, cat)
+    print(f"     tapped category '{desc}' via {how}")
+    time.sleep(2)
+
+
+def step_cat_product(driver):
+    """Your Step 11 — 2nd product in the category, no scrolling."""
+    time.sleep(1)
+    cards = cat_get_product_cards(driver)   # pick from what is on screen
+    if len(cards) <= CAT_PRODUCT_INDEX:
+        raise RuntimeError(f"only {len(cards)} product(s) visible on screen, "
+                           f"need at least {CAT_PRODUCT_INDEX + 1}")
+    prod = cards[CAT_PRODUCT_INDEX][2]
+    desc = cards[CAT_PRODUCT_INDEX][3].replace("\n", " ").strip()
+    how = cat_force_tap(driver, prod)
+    print(f"     tapped product #{CAT_PRODUCT_INDEX + 1} '{desc}' via {how}")
+    time.sleep(2)
+
+
+def step_cat_quantity(driver):
+    """
+    Your Step 12 — quantity in every size box.
+
+    heartbeat() per round is the ONE addition: this loop can run 80-90s on a
+    product with many sizes, and runner-next.ts reaps a run after 90s without
+    a database update. The typing logic below is unchanged.
+    """
+    run_id = RUNNER_STATUS.get("last_job_id")
+    filled, failed = {}, []
+    for rnd in range(8):
+        heartbeat(driver, run_id,
+                  f"Entering quantities (pass {rnd + 1}/8, {len(filled)} boxes done)")
+        progress = False
+        for hint, box in cat_get_qty_boxes(driver):
+            key = hint or f"box@{box.rect['y']}"
+            if key in filled:
+                continue
+            try:
+                if cat_fill_box(box, CAT_QTY_VALUE):
+                    filled[key] = CAT_QTY_VALUE
+                    progress = True
+                    print(f"     size {key} -> {CAT_QTY_VALUE}")
+                else:
+                    failed.append(key)
+            except Exception as e:
+                failed.append(f"{key} ({e})")
+        cat_dismiss_keyboard(driver)
+        visible = [h for h, _ in cat_get_qty_boxes(driver)]
+        if not progress and all(h in filled for h in visible):
+            break
+        cat_swipe_screen(driver, "up", ratio=0.4)
+
+    if not filled:
+        raise RuntimeError("no quantity box found on this screen")
+    if failed:
+        raise RuntimeError(f"{len(filled)} boxes filled, these failed: {failed}")
+    print(f"     [ok] Quantity '{CAT_QTY_VALUE}' entered in {len(filled)} size boxes")
+
+
+def step_cat_plus(driver):
+    """Your Step 13 — tap + to add the filled ratio."""
+    buttons = cat_find_ratio_buttons(driver)
+    for _ in range(4):
+        if buttons:
+            break
+        cat_swipe_screen(driver, "up", ratio=0.4)
+        buttons = cat_find_ratio_buttons(driver)
+    if not buttons:
+        raise RuntimeError("'+' button not found")
+    before = cat_read_ratio_count(driver)
+    how = cat_force_tap(driver, buttons[-1])        # rightmost = +
+    print(f"     tapped '+' via {how}")
+    time.sleep(1.5)
+    after = cat_read_ratio_count(driver)
+    print(f"     [ok] '+' tapped (ratio {before} -> {after})")
+
+
+def step_cat_add_to_cart_1(driver):
+    """Your Step 14 — Add to cart (1st product)."""
+    btn = cat_find_scrolling(driver, AppiumBy.ACCESSIBILITY_ID,
+                             CAT_ADD_TO_CART_DESC, max_swipes=4)
+    if btn is None:
+        raise RuntimeError("'Add to cart' not found even after scrolling")
+    how = cat_force_tap(driver, btn)
+    print(f"     tapped 'Add to cart' via {how}")
+    time.sleep(2)
+    cat_confirm_yes_if_present(driver)      # popup only appears sometimes
+
+
+def step_cat_bottom_button(driver):
+    """Your Step 15 — bottom-centre button."""
+    target = None
+    for _ in range(5):
+        s = driver.get_window_size()
+        cands = []
+        for btn in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_BUTTON_SELECTOR):
+            try:
+                r = btn.rect
+                cx = r["x"] + r["width"] / 2
+                if r["y"] > s["height"] * 0.85 and abs(cx - s["width"] / 2) < s["width"] * 0.2:
+                    cands.append((r["y"], btn))
+            except Exception:
+                continue
+        if cands:
+            cands.sort(key=lambda c: c[0])
+            target = cands[-1][1]
+            break
+        time.sleep(1)
+    if target is None:
+        raise RuntimeError("bottom-centre button not found")
+    how = cat_force_tap(driver, target)
+    print(f"     tapped bottom-centre button via {how}")
+    time.sleep(2)
+
+
+def step_cat_cart_tab(driver):
+    """Your Steps 16 / 22 / 36 — open the Cart tab."""
+    cat_open_cart_tab(driver)
+
+
+def step_cat_co_ordinates(driver):
+    """Your Step 17."""
+    cat_tap_with_retry(driver, AppiumBy.ACCESSIBILITY_ID, CAT_CO_ORDINATES_DESC,
+                       "'Co-Ordinates' option", settle=2)
+
+
+def step_cat_list_item(driver):
+    """Your Step 18 — first item in the Co-Ordinates list."""
+    item, desc = cat_find_first_list_item(driver)
+    for _ in range(4):
+        if item is not None:
+            break
+        cat_swipe_screen(driver, "up", ratio=0.4)
+        item, desc = cat_find_first_list_item(driver)
+    if item is None:
+        raise RuntimeError("no item found in the Co-Ordinates list")
+    how = cat_force_tap(driver, item)
+    print(f"     tapped list item '{desc}' via {how}")
+    time.sleep(2)
+
+
+def step_cat_minus(driver):
+    """Your Step 19 — tap - to reduce the ratio."""
+    buttons = cat_find_ratio_buttons(driver)
+    for _ in range(4):
+        if len(buttons) >= 2:
+            break
+        cat_swipe_screen(driver, "up", ratio=0.4)
+        buttons = cat_find_ratio_buttons(driver)
+    if len(buttons) < 2:
+        raise RuntimeError(
+            f"minus/plus pair not found (found {len(buttons)} button(s))")
+    before = cat_read_ratio_count(driver)
+    how = cat_force_tap(driver, buttons[0])         # leftmost = -
+    print(f"     tapped '-' via {how}")
+    time.sleep(1.5)
+    after = cat_read_ratio_count(driver)
+    print(f"     [ok] '-' tapped (ratio {before} -> {after})")
+
+
+def step_cat_add_to_cart_2(driver):
+    """Your Step 20 — Add to cart (2nd product)."""
+    btn = cat_find_scrolling(driver, AppiumBy.ACCESSIBILITY_ID,
+                             CAT_ADD_TO_CART_DESC, max_swipes=4)
+    if btn is None:
+        raise RuntimeError("'Add to cart' not found even after scrolling")
+    how = cat_force_tap(driver, btn)
+    print(f"     tapped 'Add to cart' via {how}")
+    time.sleep(2)
+
+
+def step_cat_confirm_yes(driver):
+    """Your Step 21 — confirm with Yes. heartbeat() added: this loop can run
+    ~20s and sits between two other slow steps."""
+    run_id = RUNNER_STATUS.get("last_job_id")
+    ok, tapped, last_err = False, False, "'Yes' button not found"
+    for attempt in range(10):
+        if attempt and attempt % 4 == 0:
+            heartbeat(driver, run_id, f"Confirming order (attempt {attempt}/10)")
+        elems = driver.find_elements(AppiumBy.ACCESSIBILITY_ID, CAT_YES_BUTTON_DESC)
+        if not elems:
+            if tapped:
+                ok = True
+                break
+            time.sleep(1)
+            continue
+        try:
+            how = cat_force_tap(driver, elems[0])
+            print(f"     tapped 'Yes' via {how}")
+            tapped = True
+            time.sleep(2)
+            if not driver.find_elements(AppiumBy.ACCESSIBILITY_ID, CAT_YES_BUTTON_DESC):
+                ok = True
+                break
+            last_err = "tapped, but the popup is still open"
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+    if not ok:
+        raise RuntimeError(last_err)
+
+
+def step_cat_save(driver):
+    """Your Step 23."""
+    try:
+        WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "SAVE"))
+        ).click()
+    except Exception as e:
+        raise RuntimeError(f"SAVE not clickable — cart empty? {e}")
+    time.sleep(0.8)
+
+
+def step_cat_signature(driver):
+    """Your Step 24 — fatal in this script (unlike the search/filter cases)."""
+    draw_signature(driver)
+
+
+def step_cat_submit(driver):
+    """Your Step 25."""
+    WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Submit"))
+    ).click()
+
+
+def step_cat_order_saved(driver):
+    """Your Step 26 — poll for Logout and click it the moment it renders."""
+    elapsed = sf_smart_logout(driver)
+    time.sleep(0.8)
+    print(f"     [ok] Order saved (Logout appeared in {elapsed:.1f}s)")
+
+
+def step_cat_login_screen(driver):
+    """Your Step 27 — confirm logout actually returned to the login screen."""
+    if not cat_wait_for_login_screen(driver):
+        raise RuntimeError("Login screen did not appear after logout")
+
+
+def step_cat_cart_after_relogin(driver):
+    """
+    Your Step 36 — open the Cart again after re-login.
+
+    Set CAT_ASSERT_CART_EMPTY_AFTER_RELOGIN = True to also assert the cart is
+    empty, which is what actually tests whether cart state survives a logout.
+    Off by default so this matches your local runs.
+    """
+    cat_open_cart_tab(driver)
+    if not CAT_ASSERT_CART_EMPTY_AFTER_RELOGIN:
+        qty = cat_read_total_qty(driver)
+        print(f"     [..] Cart after re-login: empty={cat_cart_is_empty(driver)}, "
+              f"total qty={qty}")
+        return
+    if not cat_cart_is_empty(driver):
+        qty = cat_read_total_qty(driver)
+        raise RuntimeError(
+            f"Cart is not empty after re-login (total qty={qty}) — the submitted "
+            f"order did not clear it")
+
+
+CATALOGUE_ORDER = [
+    # Login (reused hardened runner.py steps) — 8
+    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
+    step_done_picker, step_return_app, step_tap_login, step_wait_home,
+    # Catalogue -> product -> first booking — 7
+    step_cat_catalogue, step_cat_category, step_cat_product, step_cat_quantity,
+    step_cat_plus, step_cat_add_to_cart_1, step_cat_bottom_button,
+    # Cart -> Co-Ordinates -> second booking — 6
+    step_cat_cart_tab, step_cat_co_ordinates, step_cat_list_item,
+    step_cat_minus, step_cat_add_to_cart_2, step_cat_confirm_yes,
+    # Cart -> SAVE -> submit -> logout — 6
+    step_cat_cart_tab, step_cat_save, step_cat_signature, step_cat_submit,
+    step_cat_order_saved, step_cat_login_screen,
+    # Re-login (same hardened steps again) — 8
+    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
+    step_done_picker, step_return_app, step_tap_login, step_wait_home,
+    # Verify the cart — 1
+    step_cat_cart_after_relogin,
+]   # 36 steps
+
+
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout": LOGIN_LOGOUT,
     "product_deletion": PRODUCT_DELETION,
     "search_functionality": SEARCH_FUNCTIONALITY,
     "filter_functionality": FILTER_FUNCTIONALITY,
+    "catalogue_order": CATALOGUE_ORDER,
 }
 
 

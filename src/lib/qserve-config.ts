@@ -56,6 +56,27 @@ export const TEST_CASES: Record<string, TestCase> = {
       "Submit Order", "Smart Logout",
     ],
   },
+  catalogue_order: {
+    key: "catalogue_order",
+    name: "Catalogue Order + Re-login Check",
+    steps: [
+      "Open App", "Tap Scan QR from Gallery", "Photo Picker Opens",
+      "Select QR Image", "Tap Done in Picker", "Return to App",
+      "Tap Login Button", "Wait for Home Screen",
+      "Open Catalogue Tab", "Open Boys Category", "Open 2nd Product",
+      "Enter Quantities", "Tap Plus (Add Ratio)", "Add to Cart (1st Product)",
+      "Tap Bottom Button",
+      "Open Cart Tab", "Open Co-Ordinates", "Open First List Item",
+      "Tap Minus (Reduce Ratio)", "Add to Cart (2nd Product)", "Confirm Yes",
+      "Open Cart Tab", "Tap SAVE", "Draw Signature", "Submit Order",
+      "Wait for Order Save", "Wait for Login Screen",
+      "Open App (Re-login)", "Tap Scan QR from Gallery (Re-login)",
+      "Photo Picker Opens (Re-login)", "Select QR Image (Re-login)",
+      "Tap Done in Picker (Re-login)", "Return to App (Re-login)",
+      "Tap Login Button (Re-login)", "Wait for Home Screen (Re-login)",
+      "Verify Cart After Re-login",
+    ],
+  },
 };
 
 export const DEVICES: Device[] = [
