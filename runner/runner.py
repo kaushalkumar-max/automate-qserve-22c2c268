@@ -2923,6 +2923,7 @@ TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "product_deletion": PRODUCT_DELETION,
     "search_functionality": SEARCH_FUNCTIONALITY,
     "filter_functionality": FILTER_FUNCTIONALITY,
+    "catalogue_order": CATALOGUE_ORDER,
 }
 
 
