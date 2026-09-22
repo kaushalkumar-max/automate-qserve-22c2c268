@@ -20,21 +20,30 @@ export const listTestCases = createServerFn({ method: "GET" }).handler(async () 
 export const listDevices = createServerFn({ method: "GET" }).handler(async () => DEVICES);
 
 export const getRunnerHealth = createServerFn({ method: "GET" }).handler(async () => {
-  const url = (process.env.RENDER_URL || "https://qserve-test-manager.onrender.com").replace(/\/$/, "") + "/health";
+  const fallback = { ok: false, error: "unreachable", runner_started: false, runner: null as any };
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return { ok: false, error: `HTTP ${r.status}`, runner_started: false, runner: null };
-    const text = await r.text();
+    const base = (process.env.RENDER_URL || "https://qserve-test-manager.onrender.com").replace(/\/$/, "");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    let text = "";
+    try {
+      const r = await fetch(base + "/health", { signal: controller.signal });
+      if (!r.ok) return { ...fallback, error: `HTTP ${r.status}` };
+      text = await r.text();
+    } finally {
+      clearTimeout(timer);
+    }
+
     let j: any = {};
     try {
       j = JSON.parse(text);
     } catch {
-      return { ok: false, error: "bad response", runner_started: false, runner: null };
+      return { ...fallback, error: "bad response" };
     }
     const runner = j?.runner ?? null;
     return {
       ok: true,
-      error: null,
+      error: null as string | null,
       runner_started: !!j?.runner_started,
       runner: runner
         ? {
@@ -46,9 +55,10 @@ export const getRunnerHealth = createServerFn({ method: "GET" }).handler(async (
         : null,
     };
   } catch (e: any) {
-    return { ok: false, error: String(e?.message ?? "unreachable"), runner_started: false, runner: null };
+    return { ...fallback, error: String(e?.message ?? "unreachable") };
   }
 });
+
 
 
 export const getQrStatus = createServerFn({ method: "GET" }).handler(async () => {
