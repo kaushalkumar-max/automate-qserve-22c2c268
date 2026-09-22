@@ -1,17 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-
-async function isRunnerAuthorized(request: Request) {
-  const user = process.env.BROWSERSTACK_USERNAME?.trim();
-  const key = process.env.BROWSERSTACK_ACCESS_KEY?.trim();
-  if (!user || !key) return false;
-
-  const expected = "Basic " + btoa(`${user}:${key}`);
-  const actual = request.headers.get("authorization") ?? "";
-  if (actual.length !== expected.length) return false;
-
-  const { timingSafeEqual } = await import("crypto");
-  return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
-}
+import { isRunnerAuthorized } from "@/lib/runner-auth.server";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
