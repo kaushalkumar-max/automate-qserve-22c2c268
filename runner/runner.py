@@ -31,8 +31,8 @@ from selenium.webdriver.common.actions.action_builder import ActionBuilder
 from selenium.webdriver.common.actions.pointer_input import PointerInput
 from selenium.webdriver.common.actions import interaction
 
-BS_USER = os.environ["BROWSERSTACK_USERNAME"]
-BS_KEY  = os.environ["BROWSERSTACK_ACCESS_KEY"]
+BS_USER = os.environ["BROWSERSTACK_USERNAME"].strip()
+BS_KEY  = os.environ["BROWSERSTACK_ACCESS_KEY"].strip()
 APP_BASE_URL = os.environ.get(
     "QSERVE_APP_URL",
     os.environ.get("APP_BASE_URL", "https://automate-qserve.lovable.app"),

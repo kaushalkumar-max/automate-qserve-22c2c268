@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 async function isRunnerAuthorized(request: Request) {
-  const user = process.env.BROWSERSTACK_USERNAME;
-  const key = process.env.BROWSERSTACK_ACCESS_KEY;
+  const user = process.env.BROWSERSTACK_USERNAME?.trim();
+  const key = process.env.BROWSERSTACK_ACCESS_KEY?.trim();
   if (!user || !key) return false;
 
   const expected = "Basic " + btoa(`${user}:${key}`);
