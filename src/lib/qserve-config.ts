@@ -77,6 +77,25 @@ export const TEST_CASES: Record<string, TestCase> = {
       "Verify Cart After Re-login",
     ],
   },
+  size_edit: {
+    key: "size_edit",
+    name: "Catalogue + Size Edit (Reports)",
+    steps: [
+      "Open App", "Tap Scan QR from Gallery", "Photo Picker Opens",
+      "Select QR Image", "Tap Done in Picker", "Return to App",
+      "Tap Login Button", "Wait for Home Screen",
+      "Open Catalogue Tab", "Open Boys Brand", "Open 2nd Option",
+      "Enter Ratio in Size Fields", "Tap Plus (Add Ratio)", "Add to Cart",
+      "Back", "Back Again", "Open Home Tab",
+      "Open Reports Tab", "Open Size Wise Report", "Open Size 10 Tile",
+      "Select Checkbox 2", "Edit Size 10 Entries", "Back", "Open Home Tab",
+      "Open Reports Tab", "Open Brand Report", "Open Detailed Report",
+      "Open Booking Page", "Back", "Back Again", "Back Third Time",
+      "Back on Brand Report",
+      "Open Home Tab", "Open Cart Tab", "Tap SAVE", "Draw Signature",
+      "Submit Order", "Wait for Order Save", "Confirm Logout",
+    ],
+  },
 };
 
 export const DEVICES: Device[] = [

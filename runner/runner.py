@@ -2918,12 +2918,734 @@ CATALOGUE_ORDER = [
 ]   # 36 steps
 
 
+# ---------- Size edit: config ----------
+
+SE_RATIO_VALUE = "5"       # ratio typed into every size field in the catalogue
+SE_SIZE_NUMBER = "10"      # which size to edit in the Size Wise report
+SE_SIZE_VALUE = "9"        # value typed into that size's field in the report
+SE_BRAND_NAME = "Boys"     # brand to open in the catalogue
+SE_OPTION_INDEX = 1        # 0 = first option, 1 = second option
+SE_MAX_SIZE_EDITS = 10     # safety cap on the edit loop
+
+SE_HOME_TAB_SELECTOR = 'new UiSelector().resourceId("nav_home")'
+SE_REPORTS_TAB_SELECTOR = 'new UiSelector().resourceId("nav_reports")'
+SE_BRAND_REPORT_DESC = "Brand Report"
+SE_SIZE_WISE_CATEGORY_DESC = "Size Wise Report At Category"
+SE_TILE_DESC = SE_SIZE_NUMBER
+SE_EDIT_SIZE_DESC = f"Edit Size {SE_SIZE_NUMBER}"
+SE_SECOND_CHECKBOX_SELECTOR = (
+    'new UiSelector().className("android.widget.HorizontalScrollView")'
+    '.childSelector(new UiSelector().className("android.widget.CheckBox").instance(1))'
+)
+SE_SAVE_CHANGES_SELECTOR = 'new UiSelector().descriptionContains("Save Changes")'
+
+SE_EDIT_SIZE_LOCATORS = [
+    (AppiumBy.ACCESSIBILITY_ID, SE_EDIT_SIZE_DESC),
+    (AppiumBy.ANDROID_UIAUTOMATOR,
+     f'new UiSelector().descriptionContains("{SE_EDIT_SIZE_DESC}")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Edit Size")'),
+    (AppiumBy.XPATH, '//*[contains(@content-desc,"Edit Size")]'),
+]
+
+# Carries the booked option name from step 11 to step 28 — runner steps are
+# separate calls, so a local variable would not survive between them.
+SE_STATE: dict = {}
+
+
+# ---------- Size edit: navigation helpers ----------
+
+def se_find_top_left_back_button(driver):
+    s = driver.get_window_size()
+    for btn in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_BUTTON_SELECTOR):
+        try:
+            r = btn.rect
+            if r["x"] < s["width"] * 0.25 and r["y"] < s["height"] * 0.15:
+                return btn
+        except Exception:
+            continue
+    return None
+
+
+def se_tap_back_button(driver):
+    """Tap the top-left back button; falls back to system back."""
+    for _ in range(5):
+        btn = se_find_top_left_back_button(driver)
+        if btn is not None:
+            try:
+                btn.click()
+                time.sleep(1.5)
+                return True
+            except Exception:
+                pass
+        time.sleep(1)
+    driver.back()
+    time.sleep(1.5)
+    return False
+
+
+def se_get_card_list(driver):
+    """Cards on screen (brands or options), topmost then leftmost.
+    A card's content-desc is 'name<newline>extra'."""
+    with_extra, plain = [], []
+    elems = []
+    for val in [CAT_TILE_SELECTOR,
+                'new UiSelector().className("android.view.View")']:
+        try:
+            elems.extend(driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, val))
+        except Exception:
+            continue
+        if with_extra or plain:
+            break
+    for elem in elems:
+        try:
+            desc = (elem.get_attribute("content-desc") or "").strip()
+            if not desc:
+                continue
+            r = elem.rect
+            if r["y"] < 200 or r["height"] < 100:
+                continue                       # nav icons, headers
+            (with_extra if "\n" in desc else plain).append((r["y"], r["x"], elem, desc))
+        except Exception:
+            continue
+    cards = with_extra or plain
+    cards.sort(key=lambda c: (c[0], c[1]))
+    return cards
+
+
+# ---------- Size edit: add-to-cart helpers ----------
+
+def se_find_add_to_cart(driver):
+    """The 'Add to cart' button: wide, short, low on the screen."""
+    s_ = driver.get_window_size()
+    cands = []
+    for by, val in [
+        (AppiumBy.ACCESSIBILITY_ID, CAT_ADD_TO_CART_DESC),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         f'new UiSelector().descriptionContains("{CAT_ADD_TO_CART_DESC}")'),
+    ]:
+        try:
+            for elem in driver.find_elements(by, val):
+                try:
+                    r = elem.rect
+                except Exception:
+                    continue
+                if r["height"] < 90 or r["height"] > 320:
+                    continue
+                if r["width"] < s_["width"] * 0.30:
+                    continue
+                if r["y"] < s_["height"] * 0.40:
+                    continue
+                cands.append((r["y"], elem))
+        except Exception:
+            continue
+        if cands:
+            break
+    if not cands:
+        return None
+    cands.sort(key=lambda c: c[0])
+    return cands[0][1]
+
+
+def se_tap_add_to_cart(driver):
+    """Tap 'Add to cart' and clear the Yes popup if it appears."""
+    btn = None
+    for _ in range(3):
+        btn = se_find_add_to_cart(driver)
+        if btn is not None:
+            break
+        time.sleep(1)
+    if btn is None:
+        raise RuntimeError("'Add to cart' button not found")
+    r = btn.rect
+    how = cat_force_tap(driver, btn)
+    print(f"     tapped 'Add to cart' at y={r['y']}..{r['y'] + r['height']} via {how}")
+    time.sleep(2)
+    cat_confirm_yes_if_present(driver)
+
+
+# ---------- Size edit: report helpers ----------
+
+def se_tap_report_option(driver, skip_text=None, prefer=None):
+    """Tap the option name on a report page (left column). Headings, the
+    summary line and the right-hand category column are skipped. When the
+    booked option name is known it is tried first."""
+    if prefer:
+        key = prefer.split()[0] if prefer.split() else prefer
+        for by, val in [
+            (AppiumBy.ACCESSIBILITY_ID, prefer),
+            (AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().descriptionContains("{key}")'),
+            (AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().textContains("{key}")'),
+        ]:
+            try:
+                elems = driver.find_elements(by, val)
+            except Exception:
+                continue
+            for elem in elems:
+                try:
+                    r = elem.rect
+                except Exception:
+                    continue
+                if r["height"] < 30:
+                    continue
+                text = ((elem.get_attribute("text") or "") + " " +
+                        (elem.get_attribute("content-desc") or "")).strip()
+                how = cat_force_tap(driver, elem)
+                time.sleep(2)
+                return (text or prefer), how
+
+    s_ = driver.get_window_size()
+    skip = ("detailed brand report", "brand report", "option name", "category",
+            "option", "non-core", "core", "total", "save", SE_BRAND_NAME.lower())
+    rows = []
+    for val in ['new UiSelector().className("android.view.View")',
+                'new UiSelector().className("android.widget.TextView")',
+                'new UiSelector().className("android.widget.ImageView")']:
+        try:
+            for elem in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, val):
+                text = ((elem.get_attribute("text") or "") + " " +
+                        (elem.get_attribute("content-desc") or "")).strip()
+                if not text or len(text) > 60 or "|" in text:
+                    continue
+                low = text.lower().strip()
+                if any(low == w or low.startswith(w) for w in skip):
+                    continue
+                if low.replace(",", "").replace(".", "").isdigit():
+                    continue
+                if skip_text and text.strip() == skip_text.strip():
+                    continue
+                r = elem.rect
+                if r["y"] < s_["height"] * 0.12 or r["y"] > s_["height"] * 0.90:
+                    continue
+                if r["x"] > s_["width"] * 0.65:          # right column = Category
+                    continue
+                rows.append((r["y"], r["x"], elem, text))
+        except Exception:
+            continue
+    if not rows:
+        raise RuntimeError("no option found on the report page")
+    rows.sort(key=lambda x: (x[0], x[1]))
+    elem, text = rows[0][2], rows[0][3]
+    how = cat_force_tap(driver, elem)
+    time.sleep(2)
+    return text, how
+
+
+# ---------- Size edit: edit-view helpers ----------
+
+def se_size_input_visible(driver):
+    """True once the edit view is open. XPath cannot filter on @hint reliably,
+    so any EditText on screen counts as the edit view being open."""
+    try:
+        return len(driver.find_elements(
+            AppiumBy.ANDROID_UIAUTOMATOR, CAT_EDITTEXT_SELECTOR)) > 0
+    except Exception:
+        return False
+
+
+def se_find_size_input(driver):
+    """Return the size input box: the EditText whose hint matches, else the
+    only EditText on screen, else the first one."""
+    fields = driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_EDITTEXT_SELECTOR)
+    if not fields:
+        raise RuntimeError(f"size {SE_SIZE_NUMBER} input field not found")
+    for f in fields:
+        try:
+            if (f.get_attribute("hint") or "").strip() == SE_TILE_DESC:
+                return f
+        except Exception:
+            continue
+    if len(fields) > 1:
+        print(f"     note: {len(fields)} input fields on screen, using the first")
+    return fields[0]
+
+
+def se_find_save_changes(driver, scroll=True):
+    """Return the 'Save Changes' button or None (tries several locators,
+    scrolling if the button is below the fold)."""
+    locators = [
+        (AppiumBy.ANDROID_UIAUTOMATOR, SE_SAVE_CHANGES_SELECTOR),
+        (AppiumBy.ACCESSIBILITY_ID, " Save Changes"),
+        (AppiumBy.ACCESSIBILITY_ID, "Save Changes"),
+        (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("Save Changes")'),
+        (AppiumBy.XPATH,
+         '//*[contains(@content-desc,"Save") or contains(@text,"Save Changes")]'),
+    ]
+    for by, val in locators:
+        try:
+            elems = driver.find_elements(by, val)
+            if elems:
+                return elems[0]
+        except Exception:
+            continue
+    if scroll:
+        for _ in range(4):
+            cat_swipe_screen(driver, "up", ratio=0.4)
+            for by, val in locators:
+                try:
+                    elems = driver.find_elements(by, val)
+                    if elems:
+                        return elems[0]
+                except Exception:
+                    continue
+    return None
+
+
+def se_select_checkbox_2(driver):
+    """Select the 2nd checkbox (skips the tap if it is already checked)."""
+    last_err = None
+    for _ in range(10):
+        try:
+            box = driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
+                                      SE_SECOND_CHECKBOX_SELECTOR)
+            if box.get_attribute("checked") != "true":
+                box.click()
+                time.sleep(1)
+                box = driver.find_element(AppiumBy.ANDROID_UIAUTOMATOR,
+                                          SE_SECOND_CHECKBOX_SELECTOR)
+            if box.get_attribute("checked") == "true":
+                return
+            last_err = "tapped, but checkbox still shows unchecked"
+        except Exception as e:
+            last_err = e
+        time.sleep(1)
+    raise RuntimeError(f"2nd checkbox could not be selected: {last_err}")
+
+
+def se_find_edit_size_button(driver):
+    for by, val in SE_EDIT_SIZE_LOCATORS:
+        try:
+            elems = driver.find_elements(by, val)
+            if elems:
+                return elems[0]
+        except Exception:
+            continue
+    for _ in range(4):
+        cat_swipe_screen(driver, "up", ratio=0.4)
+        for by, val in SE_EDIT_SIZE_LOCATORS:
+            try:
+                elems = driver.find_elements(by, val)
+                if elems:
+                    return elems[0]
+            except Exception:
+                continue
+    return None
+
+
+def se_open_size_edit_view(driver):
+    """Open the size edit view. Returns once an input field is on screen."""
+    last_err = f"'{SE_EDIT_SIZE_DESC}' not found"
+    for _ in range(6):
+        try:
+            if se_size_input_visible(driver):
+                return
+            elem = se_find_edit_size_button(driver)
+            if elem is not None:
+                how = cat_force_tap(driver, elem)
+                print(f"     tapped '{SE_EDIT_SIZE_DESC}' via {how}")
+                time.sleep(2)
+                if se_size_input_visible(driver):
+                    return
+                last_err = f"tapped '{SE_EDIT_SIZE_DESC}', but no input field appeared"
+            else:
+                last_err = f"'{SE_EDIT_SIZE_DESC}' not found even after scrolling"
+                time.sleep(1)
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+    raise RuntimeError(last_err)
+
+
+def se_edit_one_size(driver, value):
+    """Open the size edit view, type the value, close the keyboard and tap
+    Save Changes. Returns True if a Save Changes button was tapped."""
+    se_open_size_edit_view(driver)
+
+    ok, last_err = False, None
+    for _ in range(5):
+        try:
+            field = se_find_size_input(driver)
+            field.click()
+            time.sleep(0.4)
+            try:
+                field.clear()
+            except Exception:
+                pass
+            try:
+                field.set_value(value)
+            except Exception:
+                field.send_keys(value)
+            time.sleep(0.6)
+            actual = (se_find_size_input(driver).get_attribute("text") or "").strip()
+            if actual == value:
+                ok = True
+                break
+            last_err = f"field shows '{actual}', expected '{value}'"
+        except Exception as e:
+            last_err = e
+        time.sleep(1)
+    if not ok:
+        raise RuntimeError(f"could not enter size {SE_SIZE_NUMBER} value: {last_err}")
+
+    if se_find_save_changes(driver, scroll=False) is None:
+        cat_dismiss_keyboard(driver)
+
+    tapped, last_err = False, "'Save Changes' not found"
+    for _ in range(8):
+        btn = se_find_save_changes(driver)
+        if btn is None:
+            if tapped:
+                return True                    # tapped and the popup closed
+            time.sleep(1)
+            continue
+        try:
+            how = cat_force_tap(driver, btn)
+            print(f"     tapped 'Save Changes' via {how}")
+            tapped = True
+            time.sleep(2)
+            if se_find_save_changes(driver, scroll=False) is None:
+                return True
+            last_err = "tapped, but 'Save Changes' is still on screen"
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+    raise RuntimeError(str(last_err))
+
+
+# ---------- Size edit: steps ----------
+# Steps 1-8 (login) reuse the hardened runner.py steps.
+
+def step_se_catalogue(driver):
+    """Your Step 09."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR,
+                       CAT_CATALOGUE_TAB_SELECTOR, "Catalogue tab (nav_catalogue)")
+
+
+def step_se_brand(driver):
+    """Your Step 10 — the tile count changes, so match the name only."""
+    brand = cat_find_scrolling(
+        driver, AppiumBy.ANDROID_UIAUTOMATOR,
+        f'new UiSelector().descriptionStartsWith("{SE_BRAND_NAME}")', max_swipes=6)
+    if brand is None:
+        brand = cat_find_scrolling(
+            driver, AppiumBy.ANDROID_UIAUTOMATOR,
+            f'new UiSelector().textStartsWith("{SE_BRAND_NAME}")', max_swipes=4)
+    if brand is None:
+        raise RuntimeError(f"'{SE_BRAND_NAME}' not found even after scrolling")
+    brand_name = ((brand.get_attribute("content-desc") or "") or
+                  (brand.get_attribute("text") or "")).replace("\n", " ").strip()
+    how = cat_force_tap(driver, brand)
+    print(f"     tapped brand '{brand_name}' via {how}")
+    time.sleep(2)
+
+
+def step_se_option(driver):
+    """Your Step 11 — 2nd option, no scrolling. Records the option name in
+    SE_STATE so step 28 can prefer it."""
+    time.sleep(1)
+    options = se_get_card_list(driver)
+    if len(options) <= SE_OPTION_INDEX:
+        raise RuntimeError(f"only {len(options)} option(s) visible, "
+                           f"need at least {SE_OPTION_INDEX + 1}")
+    option_name = options[SE_OPTION_INDEX][3].replace("\n", " ").strip()
+    SE_STATE["option_name"] = option_name
+    how = cat_force_tap(driver, options[SE_OPTION_INDEX][2])
+    print(f"     tapped option #{SE_OPTION_INDEX + 1} '{option_name}' via {how}")
+    time.sleep(2)
+
+
+def step_se_ratio(driver):
+    """
+    Your Step 12 — ratio in every size field.
+    heartbeat() per round: this loop can run 80-90s and runner-next.ts reaps a
+    run after 90s without a database update. Typing logic unchanged.
+    """
+    run_id = RUNNER_STATUS.get("last_job_id")
+    filled, failed = {}, []
+    for rnd in range(8):
+        heartbeat(driver, run_id,
+                  f"Entering ratio (pass {rnd + 1}/8, {len(filled)} fields done)")
+        progress = False
+        for hint, box in cat_get_qty_boxes(driver):
+            key = hint or f"box@{box.rect['y']}"
+            if key in filled:
+                continue
+            try:
+                if cat_fill_box(box, SE_RATIO_VALUE):
+                    filled[key] = SE_RATIO_VALUE
+                    progress = True
+                    print(f"     size {key} -> {SE_RATIO_VALUE}")
+                else:
+                    failed.append(key)
+            except Exception as e:
+                failed.append(f"{key} ({e})")
+        cat_dismiss_keyboard(driver)
+        visible = [h for h, _ in cat_get_qty_boxes(driver)]
+        if not progress and all(h in filled for h in visible):
+            break
+        cat_swipe_screen(driver, "up", ratio=0.4)
+
+    if not filled:
+        raise RuntimeError("no size field found on this screen")
+    if failed:
+        raise RuntimeError(f"{len(filled)} filled, these failed: {failed}")
+    print(f"     [ok] Ratio '{SE_RATIO_VALUE}' entered in {len(filled)} size fields")
+
+
+def step_se_plus(driver):
+    """Your Step 13 — tap + to add the ratio."""
+    buttons = cat_find_ratio_buttons(driver)
+    for _ in range(4):
+        if buttons:
+            break
+        cat_swipe_screen(driver, "up", ratio=0.4)
+        buttons = cat_find_ratio_buttons(driver)
+    if not buttons:
+        raise RuntimeError("'+' button not found")
+    before = cat_read_ratio_count(driver)
+    how = cat_force_tap(driver, buttons[-1])        # rightmost = +
+    print(f"     tapped '+' via {how}")
+    time.sleep(1.5)
+    after = cat_read_ratio_count(driver)
+    print(f"     [ok] '+' tapped (ratio {before} -> {after})")
+
+
+def step_se_add_to_cart(driver):
+    """Your Step 14."""
+    se_tap_add_to_cart(driver)
+
+
+def step_se_back_1(driver):
+    """Your Step 15."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped" + ("" if tapped else " (system back)"))
+
+
+def step_se_back_2(driver):
+    """Your Step 16."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped" + ("" if tapped else " (system back)"))
+
+
+def step_se_home_1(driver):
+    """Your Step 17."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR, SE_HOME_TAB_SELECTOR,
+                       "Home tab (nav_home)", settle=2)
+
+
+def step_se_reports_1(driver):
+    """Your Step 18."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR, SE_REPORTS_TAB_SELECTOR,
+                       "Reports tab (nav_reports)")
+
+
+def step_se_size_wise_report(driver):
+    """Your Step 19 — scrolls if needed."""
+    card = cat_find_scrolling(driver, AppiumBy.ACCESSIBILITY_ID,
+                              SE_SIZE_WISE_CATEGORY_DESC, max_swipes=8)
+    if card is None:
+        raise RuntimeError(
+            f"'{SE_SIZE_WISE_CATEGORY_DESC}' not found even after scrolling")
+    how = cat_force_tap(driver, card)
+    print(f"     tapped '{SE_SIZE_WISE_CATEGORY_DESC}' via {how}")
+    time.sleep(2)
+
+
+def step_se_size_tile(driver):
+    """Your Step 20."""
+    cat_tap_with_retry(driver, AppiumBy.ACCESSIBILITY_ID, SE_TILE_DESC,
+                       f"'{SE_SIZE_NUMBER}' tile", settle=2)
+
+
+def step_se_checkbox(driver):
+    """Your Step 21."""
+    se_select_checkbox_2(driver)
+
+
+def step_se_edit_sizes(driver):
+    """
+    Your Step 22 — edit EVERY size entry to SE_SIZE_VALUE.
+
+    heartbeat() per edit: up to 10 edits, each with its own retry loops, can
+    run for several minutes inside this one step. Without the heartbeat the
+    run is reaped at 90s and reported as "Runner process stopped responding"
+    while it is still working. The edit logic itself is unchanged.
+    """
+    run_id = RUNNER_STATUS.get("last_job_id")
+    edited = 0
+    while edited < SE_MAX_SIZE_EDITS:
+        heartbeat(driver, run_id,
+                  f"Editing size {SE_SIZE_NUMBER} entries ({edited} done)")
+        if se_find_edit_size_button(driver) is None:
+            break
+        se_edit_one_size(driver, SE_SIZE_VALUE)
+        edited += 1
+        print(f"     size {SE_SIZE_NUMBER} entry #{edited} set to {SE_SIZE_VALUE}")
+        time.sleep(1.5)
+    if edited == 0:
+        raise RuntimeError(f"no '{SE_EDIT_SIZE_DESC}' entry found")
+    print(f"     [ok] {edited} size {SE_SIZE_NUMBER} entr(ies) set to '{SE_SIZE_VALUE}'")
+
+
+def step_se_back_3(driver):
+    """Your Step 23."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped" + ("" if tapped else " (system back)"))
+
+
+def step_se_home_2(driver):
+    """Your Step 24."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR, SE_HOME_TAB_SELECTOR,
+                       "Home tab (nav_home)", settle=2)
+
+
+def step_se_reports_2(driver):
+    """Your Step 25."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR, SE_REPORTS_TAB_SELECTOR,
+                       "Reports tab (nav_reports)")
+
+
+def step_se_brand_report(driver):
+    """Your Step 26 — scrolls UPWARDS if needed."""
+    locators = [
+        (AppiumBy.ACCESSIBILITY_ID, SE_BRAND_REPORT_DESC),
+        (AppiumBy.ANDROID_UIAUTOMATOR,
+         f'new UiSelector().descriptionContains("{SE_BRAND_REPORT_DESC}")'),
+    ]
+    card = None
+    for _ in range(5):
+        for by, val in locators:
+            elems = driver.find_elements(by, val)
+            if elems:
+                card = elems[0]
+                break
+        if card is not None:
+            break
+        print("     'Brand Report' not visible — scrolling up...")
+        cat_swipe_screen(driver, "down", ratio=0.5)   # content moves down
+    if card is None:
+        raise RuntimeError("'Brand Report' not found even after scrolling up")
+    how = cat_force_tap(driver, card)
+    print(f"     tapped 'Brand Report' via {how}")
+    time.sleep(2)
+
+
+def step_se_report_option(driver):
+    """Your Step 27 — open the option shown on the Brand Report."""
+    report_option, how = se_tap_report_option(driver)
+    print(f"     tapped option '{report_option}' via {how}")
+
+
+def step_se_booking_page(driver):
+    """Your Step 28 — tap the option name, stay on the booking page 5 sec."""
+    booked, how = se_tap_report_option(driver, prefer=SE_STATE.get("option_name"))
+    print(f"     tapped option '{booked}' via {how}")
+    print("     [..] Staying on the booking page for 5 sec...")
+    time.sleep(5)
+
+
+def step_se_back_4(driver):
+    """Your Step 29."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped" + ("" if tapped else " (system back)"))
+
+
+def step_se_back_5(driver):
+    """Your Step 30."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped" + ("" if tapped else " (system back)"))
+
+
+def step_se_back_6(driver):
+    """Your Step 31."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped" + ("" if tapped else " (system back)"))
+
+
+def step_se_back_brand_report(driver):
+    """Your Step 32 — back on the Brand Report (top-left arrow)."""
+    tapped = se_tap_back_button(driver)
+    print("     [ok] Back tapped on Brand Report" +
+          ("" if tapped else " (system back)"))
+
+
+def step_se_home_3(driver):
+    """Your Step 33."""
+    cat_tap_with_retry(driver, AppiumBy.ANDROID_UIAUTOMATOR, SE_HOME_TAB_SELECTOR,
+                       "Home tab (nav_home)", settle=2)
+
+
+def step_se_cart_tab(driver):
+    """Your Step 34 — reuses cat_open_cart_tab, which raises when the cart
+    screen never opens instead of continuing silently into SAVE."""
+    cat_open_cart_tab(driver)
+
+
+def step_se_save(driver):
+    """Your Step 35."""
+    try:
+        WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "SAVE"))
+        ).click()
+    except Exception as e:
+        raise RuntimeError(f"SAVE not clickable — cart empty? {e}")
+    time.sleep(0.8)
+
+
+def step_se_signature(driver):
+    """Your Step 36."""
+    draw_signature(driver)
+
+
+def step_se_submit(driver):
+    """Your Step 37."""
+    WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Submit"))
+    ).click()
+
+
+def step_se_order_saved(driver):
+    """Your Step 38 — poll for Logout and click it the moment it renders."""
+    elapsed = sf_smart_logout(driver)
+    time.sleep(2)
+    print(f"     [ok] Order saved (Logout appeared in {elapsed:.1f}s)")
+
+
+def step_se_logout_done(driver):
+    """Your Step 39. Your script slept 2s here and always passed; this uses
+    your own wait_for_login_screen helper so the step can actually fail.
+    Replace the body with time.sleep(2) to restore the original."""
+    if not cat_wait_for_login_screen(driver):
+        raise RuntimeError("Login screen did not appear after logout")
+
+
+SIZE_EDIT = [
+    # Login (reused hardened runner.py steps) — 8
+    step_open_app, step_scan_qr, step_picker_open, step_tap_photo,
+    step_done_picker, step_return_app, step_tap_login, step_wait_home,
+    # Catalogue order — 9
+    step_se_catalogue, step_se_brand, step_se_option, step_se_ratio,
+    step_se_plus, step_se_add_to_cart, step_se_back_1, step_se_back_2,
+    step_se_home_1,
+    # Size Wise report + edits — 7
+    step_se_reports_1, step_se_size_wise_report, step_se_size_tile,
+    step_se_checkbox, step_se_edit_sizes, step_se_back_3, step_se_home_2,
+    # Brand report — 8
+    step_se_reports_2, step_se_brand_report, step_se_report_option,
+    step_se_booking_page, step_se_back_4, step_se_back_5, step_se_back_6,
+    step_se_back_brand_report,
+    # Home -> cart -> submit -> logout — 7
+    step_se_home_3, step_se_cart_tab, step_se_save, step_se_signature,
+    step_se_submit, step_se_order_saved, step_se_logout_done,
+]   # 39 steps
+
+
 TEST_CASES: dict[str, list[Callable[[Any], None]]] = {
     "login_logout": LOGIN_LOGOUT,
     "product_deletion": PRODUCT_DELETION,
     "search_functionality": SEARCH_FUNCTIONALITY,
     "filter_functionality": FILTER_FUNCTIONALITY,
     "catalogue_order": CATALOGUE_ORDER,
+    "size_edit": SIZE_EDIT,
 }
 
 
