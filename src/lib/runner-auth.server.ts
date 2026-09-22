@@ -54,11 +54,13 @@ export async function isRunnerAuthorized(request: Request) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
-    const response = await fetch("https://api-cloud.browserstack.com/app-automate/plan.json", {
-      headers: { authorization: actual },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    const response = await fetch(
+      "https://api-cloud.browserstack.com/app-automate/recent_apps?limit=1",
+      {
+        headers: { authorization: actual },
+        signal: controller.signal,
+      },
+    ).finally(() => clearTimeout(timeout));
     if (!response.ok) return false;
 
     validatedAuthorization = actual;
