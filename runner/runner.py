@@ -2753,7 +2753,9 @@ def step_cat_quantity(driver):
     """
     run_id = RUNNER_STATUS.get("last_job_id")
     if not cat_wait_for_qty_boxes(driver):
-        raise RuntimeError("no quantity box found on this screen (waited 20s)")
+        raise RuntimeError(
+            "no quantity box found on this screen (waited 20s). On screen: "
+            + cat_describe_screen(driver))
     filled, failed = {}, []
     for rnd in range(8):
         heartbeat(driver, run_id,
@@ -3449,7 +3451,9 @@ def step_se_ratio(driver):
     """
     run_id = RUNNER_STATUS.get("last_job_id")
     if not cat_wait_for_qty_boxes(driver):
-        raise RuntimeError("no size field found on this screen (waited 20s)")
+        raise RuntimeError(
+            "no size field found on this screen (waited 20s). On screen: "
+            + cat_describe_screen(driver))
     filled, failed = {}, []
     for rnd in range(8):
         heartbeat(driver, run_id,
