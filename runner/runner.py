@@ -2435,6 +2435,17 @@ def cat_get_qty_boxes(driver):
     return [(b[2], b[3]) for b in boxes]
 
 
+def cat_wait_for_qty_boxes(driver, timeout=20):
+    """Wait for the size/quantity fields to render, then return them."""
+    end = time.time() + timeout
+    while time.time() < end:
+        boxes = cat_get_qty_boxes(driver)
+        if boxes:
+            return boxes
+        time.sleep(0.5)
+    return []
+
+
 def cat_fill_box(box, value):
     """Type a value into one box and confirm it stuck."""
     box.click()
@@ -2666,6 +2677,8 @@ def step_cat_quantity(driver):
     a database update. The typing logic below is unchanged.
     """
     run_id = RUNNER_STATUS.get("last_job_id")
+    if not cat_wait_for_qty_boxes(driver):
+        raise RuntimeError("no quantity box found on this screen (waited 20s)")
     filled, failed = {}, []
     for rnd in range(8):
         heartbeat(driver, run_id,
