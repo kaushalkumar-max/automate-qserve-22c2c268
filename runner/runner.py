@@ -2699,7 +2699,7 @@ def step_cat_quantity(driver):
                 failed.append(f"{key} ({e})")
         cat_dismiss_keyboard(driver)
         visible = [h for h, _ in cat_get_qty_boxes(driver)]
-        if not progress and all(h in filled for h in visible):
+        if not progress and visible and all(h in filled for h in visible):
             break
         cat_swipe_screen(driver, "up", ratio=0.4)
 
@@ -3373,6 +3373,8 @@ def step_se_ratio(driver):
     run after 90s without a database update. Typing logic unchanged.
     """
     run_id = RUNNER_STATUS.get("last_job_id")
+    if not cat_wait_for_qty_boxes(driver):
+        raise RuntimeError("no size field found on this screen (waited 20s)")
     filled, failed = {}, []
     for rnd in range(8):
         heartbeat(driver, run_id,
