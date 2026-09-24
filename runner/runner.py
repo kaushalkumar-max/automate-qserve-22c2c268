@@ -3395,7 +3395,7 @@ def step_se_ratio(driver):
                 failed.append(f"{key} ({e})")
         cat_dismiss_keyboard(driver)
         visible = [h for h, _ in cat_get_qty_boxes(driver)]
-        if not progress and all(h in filled for h in visible):
+        if not progress and visible and all(h in filled for h in visible):
             break
         cat_swipe_screen(driver, "up", ratio=0.4)
 
