@@ -2435,6 +2435,17 @@ def cat_get_qty_boxes(driver):
     return [(b[2], b[3]) for b in boxes]
 
 
+def cat_wait_for_qty_boxes(driver, timeout=20):
+    """Wait for the size/quantity fields to render, then return them."""
+    end = time.time() + timeout
+    while time.time() < end:
+        boxes = cat_get_qty_boxes(driver)
+        if boxes:
+            return boxes
+        time.sleep(0.5)
+    return []
+
+
 def cat_fill_box(box, value):
     """Type a value into one box and confirm it stuck."""
     box.click()
@@ -2666,6 +2677,8 @@ def step_cat_quantity(driver):
     a database update. The typing logic below is unchanged.
     """
     run_id = RUNNER_STATUS.get("last_job_id")
+    if not cat_wait_for_qty_boxes(driver):
+        raise RuntimeError("no quantity box found on this screen (waited 20s)")
     filled, failed = {}, []
     for rnd in range(8):
         heartbeat(driver, run_id,
@@ -2686,7 +2699,7 @@ def step_cat_quantity(driver):
                 failed.append(f"{key} ({e})")
         cat_dismiss_keyboard(driver)
         visible = [h for h, _ in cat_get_qty_boxes(driver)]
-        if not progress and all(h in filled for h in visible):
+        if not progress and visible and all(h in filled for h in visible):
             break
         cat_swipe_screen(driver, "up", ratio=0.4)
 
@@ -3360,6 +3373,8 @@ def step_se_ratio(driver):
     run after 90s without a database update. Typing logic unchanged.
     """
     run_id = RUNNER_STATUS.get("last_job_id")
+    if not cat_wait_for_qty_boxes(driver):
+        raise RuntimeError("no size field found on this screen (waited 20s)")
     filled, failed = {}, []
     for rnd in range(8):
         heartbeat(driver, run_id,
@@ -3380,7 +3395,7 @@ def step_se_ratio(driver):
                 failed.append(f"{key} ({e})")
         cat_dismiss_keyboard(driver)
         visible = [h for h, _ in cat_get_qty_boxes(driver)]
-        if not progress and all(h in filled for h in visible):
+        if not progress and visible and all(h in filled for h in visible):
             break
         cat_swipe_screen(driver, "up", ratio=0.4)
 
