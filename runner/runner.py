@@ -3042,6 +3042,76 @@ SE_EDIT_SIZE_LOCATORS = [
 SE_STATE: dict = {}
 
 
+def se_read_box(box):
+    """Current text of a quantity box, or '' if it can't be read."""
+    try:
+        return (box.get_attribute("text") or "").strip()
+    except Exception:
+        return ""
+
+
+def se_fill_quantities(driver, value, rounds=8):
+    """
+    Fill every quantity box with `value`, idempotently.
+
+    This replaces the loop that came from your local script. That loop keyed
+    each box on its `hint` attribute to decide whether it had already been
+    filled — but a Flutter hint is only present while the field is EMPTY. Once
+    a box holds "5" its hint is gone, so on the next pass it looked like a
+    brand-new box, and `cat_fill_box` starts with `box.clear()`. Every extra
+    pass therefore wiped the boxes before refilling them, and `progress` stayed
+    True so the loop never hit its break condition and ran all 8 rounds. If the
+    last pass cleared a box and the refill didn't land, you are left looking at
+    0s in fields that were correct two seconds earlier.
+
+    The fix is to stop asking "have I filled this box?" and ask "does this box
+    already read `value`?" — which is true regardless of hints, positions, or
+    stale references. A box that already reads `value` is left completely
+    alone, so a second pass can never undo a first.
+    """
+    run_id = RUNNER_STATUS.get("last_job_id")
+    if not cat_wait_for_qty_boxes(driver):
+        raise RuntimeError(
+            "no size field found on this screen (waited 20s). On screen: "
+            + cat_describe_screen(driver))
+
+    failed = []
+    for rnd in range(rounds):
+        heartbeat(driver, run_id, f"Entering quantities (pass {rnd + 1}/{rounds})")
+        boxes = cat_get_qty_boxes(driver)
+        todo = [(h, b) for h, b in boxes if se_read_box(b) != value]
+
+        if not todo:
+            filled = len(boxes)
+            print(f"     [ok] all {filled} visible box(es) read '{value}'")
+            if rnd == 0 or filled:
+                return filled
+
+        for hint, box in todo:
+            try:
+                cat_fill_box(box, value)
+                print(f"     size {hint} -> {value}")
+            except Exception as e:
+                failed.append(f"{hint} ({e})")
+        cat_dismiss_keyboard(driver)
+
+        # Re-check before scrolling: only scroll if something is still unset.
+        still = [h for h, b in cat_get_qty_boxes(driver) if se_read_box(b) != value]
+        if not still:
+            total = len(cat_get_qty_boxes(driver))
+            print(f"     [ok] all {total} box(es) read '{value}'")
+            return total
+        cat_swipe_screen(driver, "up", ratio=0.4)
+
+    boxes = cat_get_qty_boxes(driver)
+    bad = [h for h, b in boxes if se_read_box(b) != value]
+    if bad:
+        raise RuntimeError(
+            f"{len(boxes) - len(bad)} of {len(boxes)} box(es) set to '{value}'; "
+            f"still wrong: {bad}" + (f"; errors: {failed}" if failed else ""))
+    return len(boxes)
+
+
 # ---------- Size edit: navigation helpers ----------
 
 def se_find_top_left_back_button(driver):
@@ -3429,13 +3499,24 @@ def step_se_brand(driver):
 
 
 def step_se_option(driver):
-    """Your Step 11 — 2nd option, no scrolling. Records the option name in
-    SE_STATE so step 28 can prefer it."""
+    """
+    Your Step 11 — 2nd option. Records the option name in SE_STATE so step 28
+    can prefer it.
+
+    Uses cat_get_product_cards, the same card finder the passing
+    catalogue_order test uses, instead of se_get_card_list. The two disagreed:
+    se_get_card_list also scans android.view.View and prefers cards whose
+    content-desc contains a newline, so "the second card" was not the same
+    element in both tests. se_get_card_list stays as a fallback.
+    """
     time.sleep(1)
-    options = se_get_card_list(driver)
+    options = cat_get_product_cards(driver)
+    if len(options) <= SE_OPTION_INDEX:
+        options = se_get_card_list(driver)
     if len(options) <= SE_OPTION_INDEX:
         raise RuntimeError(f"only {len(options)} option(s) visible, "
-                           f"need at least {SE_OPTION_INDEX + 1}")
+                           f"need at least {SE_OPTION_INDEX + 1}. On screen: "
+                           + cat_describe_screen(driver))
     option_name = options[SE_OPTION_INDEX][3].replace("\n", " ").strip()
     SE_STATE["option_name"] = option_name
     how = cat_force_tap(driver, options[SE_OPTION_INDEX][2])
@@ -3446,43 +3527,13 @@ def step_se_option(driver):
 def step_se_ratio(driver):
     """
     Your Step 12 — ratio in every size field.
-    heartbeat() per round: this loop can run 80-90s and runner-next.ts reaps a
-    run after 90s without a database update. Typing logic unchanged.
-    """
-    run_id = RUNNER_STATUS.get("last_job_id")
-    if not cat_wait_for_qty_boxes(driver):
-        raise RuntimeError(
-            "no size field found on this screen (waited 20s). On screen: "
-            + cat_describe_screen(driver))
-    filled, failed = {}, []
-    for rnd in range(8):
-        heartbeat(driver, run_id,
-                  f"Entering ratio (pass {rnd + 1}/8, {len(filled)} fields done)")
-        progress = False
-        for hint, box in cat_get_qty_boxes(driver):
-            key = hint
-            if key in filled:
-                continue
-            try:
-                if cat_fill_box(box, SE_RATIO_VALUE):
-                    filled[key] = SE_RATIO_VALUE
-                    progress = True
-                    print(f"     size {key} -> {SE_RATIO_VALUE}")
-                else:
-                    failed.append(key)
-            except Exception as e:
-                failed.append(f"{key} ({e})")
-        cat_dismiss_keyboard(driver)
-        visible = [h for h, _ in cat_get_qty_boxes(driver)]
-        if not progress and visible and all(h in filled for h in visible):
-            break
-        cat_swipe_screen(driver, "up", ratio=0.4)
 
-    if not filled:
-        raise RuntimeError("no size field found on this screen")
-    if failed:
-        raise RuntimeError(f"{len(filled)} filled, these failed: {failed}")
-    print(f"     [ok] Ratio '{SE_RATIO_VALUE}' entered in {len(filled)} size fields")
+    Now delegates to se_fill_quantities, which is idempotent: a box already
+    holding the value is never cleared and retyped. See that function for why
+    the old hint-keyed loop was wiping boxes it had already filled.
+    """
+    entered = se_fill_quantities(driver, SE_RATIO_VALUE)
+    print(f"     [ok] Ratio '{SE_RATIO_VALUE}' entered in {entered} size fields")
 
 
 def step_se_plus(driver):
@@ -3504,8 +3555,26 @@ def step_se_plus(driver):
 
 
 def step_se_add_to_cart(driver):
-    """Your Step 14."""
-    se_tap_add_to_cart(driver)
+    """
+    Your Step 14.
+
+    Uses the same locator as the passing catalogue test
+    (cat_find_scrolling on the accessibility id) before falling back to
+    se_find_add_to_cart, whose geometric filters (height 90-320, width > 30%
+    of screen, below 40% of screen) were tuned on your USB device and can
+    reject a valid button on a differently sized cloud device.
+    """
+    btn = cat_find_scrolling(driver, AppiumBy.ACCESSIBILITY_ID,
+                             CAT_ADD_TO_CART_DESC, max_swipes=4)
+    if btn is None:
+        btn = se_find_add_to_cart(driver)
+    if btn is None:
+        raise RuntimeError("'Add to cart' not found even after scrolling. "
+                           "On screen: " + cat_describe_screen(driver))
+    how = cat_force_tap(driver, btn)
+    print(f"     tapped 'Add to cart' via {how}")
+    time.sleep(2)
+    cat_confirm_yes_if_present(driver)
 
 
 def step_se_back_1(driver):
