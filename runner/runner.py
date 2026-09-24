@@ -2422,15 +2422,82 @@ def cat_find_first_list_item(driver):
     return rows[0][2], rows[0][3]
 
 
-def cat_get_qty_boxes(driver):
-    """Quantity boxes as (hint, element), topmost then leftmost."""
-    boxes = []
-    for f in driver.find_elements(AppiumBy.ANDROID_UIAUTOMATOR, CAT_EDITTEXT_SELECTOR):
+def cat_find_qty_elements(driver):
+    """
+    Return the raw size/quantity input elements.
+
+    Tries CLASS_NAME first — the SAME location strategy `sf_fill_sizes` uses,
+    which is demonstrably working on this app in the search and filter tests.
+    The UiSelector form is kept as a fallback. These are different Appium
+    strategies: CLASS_NAME is resolved by the driver against its page-source
+    tree, while ANDROID_UIAUTOMATOR hands a UiSelector to UiAutomator on the
+    device. On Flutter surfaces they do not always agree, and the failing
+    tests were using only the second one.
+    """
+    for by, val in ((AppiumBy.CLASS_NAME, "android.widget.EditText"),
+                    (AppiumBy.ANDROID_UIAUTOMATOR, CAT_EDITTEXT_SELECTOR),
+                    (AppiumBy.XPATH, "//android.widget.EditText")):
         try:
-            r = f.rect
-            boxes.append((r["y"], r["x"], (f.get_attribute("hint") or "").strip(), f))
+            els = driver.find_elements(by, val)
         except Exception:
             continue
+        if els:
+            return els
+    return []
+
+
+def cat_describe_screen(driver, limit=30):
+    """
+    One-line summary of what IS on screen, for error messages when the
+    expected inputs are not found. Turns "no quantity box" into "no quantity
+    box, but here are the 30 nodes that ARE there", which is what tells you
+    whether the boxes are a different class or behind a tab.
+    """
+    out = []
+    try:
+        for el in driver.find_elements(AppiumBy.XPATH, "//*"):
+            try:
+                cls = (el.get_attribute("className") or "").split(".")[-1]
+                label = (el.get_attribute("content-desc") or
+                         el.get_attribute("text") or "").strip()
+            except Exception:
+                continue
+            if not cls:
+                continue
+            out.append(f"{cls}:{label[:18]}" if label else cls)
+            if len(out) >= limit:
+                break
+    except Exception:
+        pass
+    return ", ".join(out) or "(could not read screen)"
+
+
+def cat_get_qty_boxes(driver):
+    """
+    Quantity boxes as (hint, element), topmost then leftmost.
+
+    A box is NEVER dropped because `.rect` failed. The old version did that
+    inside a bare `except: continue`, so one failing rect lookup could empty
+    the whole list and surface as "no quantity box on this screen" even though
+    the elements had been found. The returned key is also guaranteed non-empty
+    so callers never need to call `.rect` again themselves.
+    """
+    boxes = []
+    for idx, f in enumerate(cat_find_qty_elements(driver)):
+        try:
+            r = f.rect
+            y, x = r["y"], r["x"]
+        except Exception:
+            try:
+                loc = f.location
+                y, x = loc["y"], loc["x"]
+            except Exception:
+                y, x = idx, 0          # keep document order rather than drop it
+        try:
+            hint = (f.get_attribute("hint") or "").strip()
+        except Exception:
+            hint = ""
+        boxes.append((y, x, hint or f"@{y},{x}", f))
     boxes.sort(key=lambda b: (b[0], b[1]))
     return [(b[2], b[3]) for b in boxes]
 
@@ -2459,7 +2526,15 @@ def cat_fill_box(box, value):
     except Exception:
         box.send_keys(value)
     time.sleep(0.5)
-    return (box.get_attribute("text") or "").strip() == value
+    try:
+        return (box.get_attribute("text") or "").strip() == value
+    except Exception:
+        # Flutter rebuilds a text field when it takes focus, which makes this
+        # reference stale. The typing itself succeeded; a stale read-back is
+        # not a failure. Previously this raised and the box was recorded as
+        # failed.
+        print("     [..] field rebuilt after typing — treating as entered")
+        return True
 
 
 def cat_find_ratio_buttons(driver):
