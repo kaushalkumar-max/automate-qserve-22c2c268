@@ -2762,7 +2762,7 @@ def step_cat_quantity(driver):
                   f"Entering quantities (pass {rnd + 1}/8, {len(filled)} boxes done)")
         progress = False
         for hint, box in cat_get_qty_boxes(driver):
-            key = hint or f"box@{box.rect['y']}"
+            key = hint
             if key in filled:
                 continue
             try:
